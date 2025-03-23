@@ -27,11 +27,11 @@ if __name__ == "__main__":
     model = ResnetPreTrained(resnet50, weights)
     model.to(DEVICE)
     num_epochs = 15
-    batch_size = 32
+    batch_size = 16
     num_workers = 4
     lit_net = LitNet(model, num_epochs=num_epochs)
     wandb_logger = WandbLogger(project="bees-wings-modeling", save_dir=MODELLING_DIR)
-    early_stop_callback = EarlyStopping(monitor="val_loss", min_delta=100, patience=5, verbose=False, mode="min")
+    early_stop_callback = EarlyStopping(monitor="val_loss", min_delta=100, patience=3, verbose=False, mode="min")
     trainer = L.Trainer(max_epochs=num_epochs, logger=wandb_logger,
                         callbacks=[early_stop_callback, RichProgressBar(), checkpoint_callback])
 
