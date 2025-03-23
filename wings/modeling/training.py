@@ -18,7 +18,7 @@ checkpoint_callback = ModelCheckpoint(
     monitor="val_loss",
     mode="min",
     dirpath=MODELLING_DIR / "lightning-checkpoints" / " resnet",
-    filename="sample-resnet50-{epoch:02d}-{val_loss:.2f}-nocrop3",
+    filename="sample-resnet50-{epoch:02d}-{val_loss:.2f}-nocrop4",
 )
 
 mean = [0.485, 0.456, 0.406]
@@ -41,12 +41,12 @@ if __name__ == "__main__":
     resnet_dataset = Dataset(COUNTRIES, RAW_DATA_DIR, preprocess)
     model = ResnetPreTrained(resnet50, weights)
     model.to(DEVICE)
-    num_epochs = 25
+    num_epochs = 50
     batch_size = 16
     num_workers = 4
     lit_net = LitNet(model, num_epochs=num_epochs)
-    wandb_logger = WandbLogger(project="bees-wings-modeling", save_dir=MODELLING_DIR, name="nocrop3")
-    early_stop_callback = EarlyStopping(monitor="val_loss", min_delta=25, patience=5, verbose=False, mode="min")
+    wandb_logger = WandbLogger(project="bees-wings-modeling", save_dir=MODELLING_DIR, name="nocrop4")
+    early_stop_callback = EarlyStopping(monitor="val_loss", min_delta=20, patience=12, verbose=False, mode="min")
     trainer = L.Trainer(max_epochs=num_epochs, logger=wandb_logger,
                         callbacks=[early_stop_callback, RichProgressBar(), checkpoint_callback], deterministic=True)
 
