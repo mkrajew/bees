@@ -1,0 +1,1 @@
+from wings import config
