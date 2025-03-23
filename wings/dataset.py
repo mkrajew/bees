@@ -21,13 +21,31 @@ class Dataset(data.Dataset):
             coords_file = data_folder / f"{country}{COORDS_SUFX}"
             df = pd.read_csv(coords_file)
             self.coords_df = pd.concat([self.coords_df, df], ignore_index=True)
-        self.coords_df['label'] = self.coords_df.iloc[:, 1:].progress_apply(
-            lambda row: torch.tensor(row.values, dtype=torch.float32), axis=1)
-        self.coords_df = self.coords_df[['file', 'label']]
+        self.coords_df['img-size'] = self.coords_df['file'].progress_apply(self.process_img_sizes)
+        self.coords_df['label'] = self.coords_df.iloc[:, 1:].progress_apply(self.process_coords, axis=1)
+        self.coords_df = self.coords_df[['file', 'label', 'img-size']]
 
-    def load_image(self, filename):
+    def decode_image(self, filename):
         country = filename.split('-', 1)[0]
         image = decode_image(self.data_folder / f"{country}{IMG_FOLDER_SUFX}" / filename)
+        return image
+
+    def process_img_sizes(self, filename):
+        image = self.decode_image(filename)
+        y_size, x_size = image.shape[1], image.shape[2]
+        return x_size, y_size
+
+    def process_coords(self, row):
+        x_size, y_size = row.iloc[-1]
+        row = row[:-1]
+        row = pd.to_numeric(row)
+        row = torch.tensor(row.values, dtype=torch.float32)
+        row[::2] *= 224 / x_size
+        row[1::2] *= 224 / y_size
+        return row
+
+    def load_image(self, filename):
+        image = self.decode_image(filename)
         image = image.repeat(3, 1, 1)
         if self.preprocess_func is not None:
             image = self.preprocess_func(image)
