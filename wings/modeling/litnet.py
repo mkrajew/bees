@@ -13,6 +13,9 @@ class LitNet(L.LightningModule):
 
         self.mse_test = torchmetrics.regression.MeanSquaredError()
 
+    def forward(self, x):
+        return self.model(x)
+
     def training_step(self, batch, batch_idx):
         x, target = batch
         target = target.float()
