@@ -18,7 +18,7 @@ checkpoint_callback = ModelCheckpoint(
     monitor="val_loss",
     mode="min",
     dirpath=MODELLING_DIR / "lightning-checkpoints" / " resnet",
-    filename="transformer-{epoch:02d}-{val_loss:.2f}-v01",
+    filename="transformer-{epoch:02d}-{val_loss:.2f}-v03",
 )
 
 mean = [0.485, 0.456, 0.406]
@@ -45,14 +45,14 @@ if __name__ == "__main__":
     batch_size = 16
     num_workers = 4
     lit_net = LitNet(model, num_epochs=num_epochs)
-    wandb_logger = WandbLogger(project="bees-wings-modeling", save_dir=MODELLING_DIR, name="transformer-v01")
-    early_stop_callback = EarlyStopping(monitor="val_loss", min_delta=20, patience=15, verbose=False, mode="min")
+    wandb_logger = WandbLogger(project="bees-wings-modeling", save_dir=MODELLING_DIR, name="transformer-v03")
+    early_stop_callback = EarlyStopping(monitor="val_loss", min_delta=0.5, patience=10, verbose=False, mode="min")
     trainer = L.Trainer(max_epochs=num_epochs, logger=wandb_logger,
                         callbacks=[early_stop_callback, RichProgressBar(), checkpoint_callback], deterministic=True)
 
     train_dataset, val_dataset, test_dataset = resnet_dataset.split(0.2, 0.1)
 
-    torch.save(test_dataset, "test_dataset-transformer-v01.pth")
+    torch.save(test_dataset, "test_dataset-transformer-v03.pth")
 
     train_dataloader = data.DataLoader(train_dataset, batch_size=batch_size, num_workers=num_workers, shuffle=True,
                                        drop_last=True)

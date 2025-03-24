@@ -1,0 +1,30 @@
+┏━━━┳━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━┳━━━━━━━┓
+┃   ┃ Name      ┃ Type                  ┃ Params ┃ Mode  ┃
+┡━━━╇━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━╇━━━━━━━┩
+│ 0 │ model     │ TransformerPreTrained │ 87.5 M │ train │
+│ 1 │ criterion │ MSELoss               │      0 │ train │
+│ 2 │ mse_test  │ MeanSquaredError      │      0 │ train │
+└───┴───────────┴───────────────────────┴────────┴───────┘
+Trainable params: 29.2 K
+Non-trainable params: 87.5 M
+Total params: 87.5 M
+Total estimated model params size (MB): 349
+Modules in train mode: 155
+Modules in eval mode: 0
+
+
+
+
+┏━━━┳━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━┳━━━━━━━━┳━━━━━━━┓
+┃   ┃ Name      ┃ Type             ┃ Params ┃ Mode  ┃
+┡━━━╇━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━╇━━━━━━━━╇━━━━━━━┩
+│ 0 │ model     │ ResnetPreTrained │ 23.6 M │ train │
+│ 1 │ criterion │ MSELoss          │      0 │ train │
+│ 2 │ mse_test  │ MeanSquaredError │      0 │ train │
+└───┴───────────┴──────────────────┴────────┴───────┘
+Trainable params: 77.9 K
+Non-trainable params: 23.5 M
+Total params: 23.6 M
+Total estimated model params size (MB): 94
+Modules in train mode: 154
+Modules in eval mode: 0
