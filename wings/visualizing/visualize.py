@@ -1,5 +1,12 @@
+"""
+Image visualization utilities for annotated wing datasets.
+
+This module provides functions to load wing images and their corresponding
+coordinate annotations, and display or save them with visual markers.
+It supports visualization both from file paths and directly from memory.
+"""
+
 from pathlib import Path
-from typing import Optional
 
 import cv2
 import matplotlib.pyplot as plt
@@ -10,14 +17,14 @@ import torch
 from wings.config import RAW_DATA_DIR, IMG_FOLDER_SUFX, COORDS_SUFX
 
 
-def plt_imshow(img: np.ndarray, img_title: Optional[str] = None) -> None:
+def plt_imshow(img: np.ndarray, img_title: str | None = None) -> None:
     """
     Displays an image using matplotlib with optional title.
     The image is shown in grayscale with intensity range fixed to [0, 255].
 
     Args:
-        img (np.ndarray): The image to display.
-        img_title (str, optional): Optional title for the image window.
+        img: The image to display.
+        img_title: Optional title for the image window.
     """
 
     plt.figure()
@@ -33,8 +40,8 @@ def visualize_from_file(filename: str, data_folder: Path | str = RAW_DATA_DIR) -
     then visualizes the annotated coordinates on the image using function visualize_coords.
 
     Args:
-        filename (str): Name of the image file.
-        data_folder (Path or str): Root folder containing the image and coordinate subfolders.
+        filename: Name of the image file.
+        data_folder: Root folder containing the image and coordinate subfolders.
     """
 
     country = filename.split('-', 1)[0]
@@ -50,18 +57,18 @@ def visualize_from_file(filename: str, data_folder: Path | str = RAW_DATA_DIR) -
     visualize_coords(img, targets, filename=filename)
 
 
-def visualize_coords(img: np.ndarray, targets: torch.Tensor, *, filename: Optional[str] = None, spot_size: int = 6,
-                     show: bool = True, save_path: Optional[Path | str] = None) -> None:
+def visualize_coords(img: np.ndarray, targets: torch.Tensor, *, filename: str | None = None, spot_size: int = 6,
+                     show: bool = True, save_path: Path | str | None = None) -> None:
     """
     Draws target coordinates on an image as green circles and optionally displays or saves it.
 
     Args:
-        img (np.ndarray): The image on which to draw.
-        targets (torch.Tensor): A 1D tensor of alternating x and y coordinates.
-        filename (str, optional): Optional title used when displaying the image.
-        spot_size (int): Radius of the circle drawn at each coordinate point.
-        show (bool): If True, displays the image using matplotlib.
-        save_path (str or Path, optional): If provided, saves the annotated image to this path.
+        img: The image on which to draw.
+        targets: A 1D tensor of alternating x and y coordinates.
+        filename: Optional title used when displaying the image.
+        spot_size: Radius of the circle drawn at each coordinate point.
+        show: If True, displays the image using matplotlib.
+        save_path: If provided, saves the annotated image to this path.
     """
 
     x_size, y_size = img.shape[1], img.shape[0]

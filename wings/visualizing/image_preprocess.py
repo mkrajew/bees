@@ -1,3 +1,14 @@
+"""
+Image preprocessing utilities for deep learning models.
+
+This module provides functions to preprocess and reverse-preprocess images
+in a way that aligns with standard pipelines used in pretrained models (e.g., ResNet, ViT).
+
+Constants:
+    mean: Channel-wise mean used for normalization in ImageNet.
+    std: Channel-wise standard deviation used for normalization in ImageNet.
+"""
+
 import numpy as np
 import torch
 import torchvision.transforms.functional as F
@@ -23,10 +34,10 @@ def preprocess(img: torch.Tensor) -> torch.Tensor:
     This preprocessing is suitable for PyTorch-based ResNet and ViT (Vision Transformer) models.
 
     Args:
-        img (torch.Tensor): Input image tensor or PIL image.
+        img: Input image tensor or PIL image.
 
     Returns:
-        torch.Tensor: Preprocessed image tensor ready for model input.
+        Preprocessed image tensor ready for model input.
     """
 
     img = F.resize(img, [224, 224], interpolation=F.InterpolationMode.BILINEAR, antialias=True)
@@ -52,10 +63,10 @@ def denormalize(img: torch.Tensor) -> np.ndarray:
     4. Ensures the image is stored in a contiguous array.
 
     Args:
-        img (torch.Tensor): A normalized image tensor of shape (3, H, W), with float values.
+        img: A normalized image tensor of shape (3, H, W), with float values.
 
     Returns:
-        np.ndarray: Denormalized image as a NumPy array in (H, W, C) format with dtype uint8.
+        Denormalized image as a NumPy array in (H, W, C) format with dtype uint8.
     """
 
     mean_d = torch.tensor(mean).view(3, 1, 1)
