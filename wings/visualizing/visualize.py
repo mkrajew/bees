@@ -57,8 +57,15 @@ def visualize_from_file(filename: str, data_folder: Path | str = RAW_DATA_DIR) -
     visualize_coords(img, targets, filename=filename)
 
 
-def visualize_coords(img: np.ndarray, targets: torch.Tensor, *, filename: str | None = None, spot_size: int = 6,
-                     show: bool = True, save_path: Path | str | None = None) -> None:
+def visualize_coords(
+        img: np.ndarray,
+        targets: torch.Tensor,
+        *,
+        filename: str | None = None,
+        spot_size: int = 6,
+        show: bool = True,
+        save_path: Path | str | None = None
+) -> None:
     """
     Draws target coordinates on an image as green circles and optionally displays or saves it.
 

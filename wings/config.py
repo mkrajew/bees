@@ -32,6 +32,7 @@ Attributes:
 
 from pathlib import Path
 
+import numpy as np
 import torch
 from loguru import logger
 
@@ -60,10 +61,15 @@ DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 logger.info(f"{torch.cuda.get_device_name()=}")
 torch.set_float32_matmul_precision('high')
 
+
+SEED = 42
+np.random.seed(SEED)
+torch.manual_seed(SEED)
+
 # GPU operations have a separate seed we also want to set
 if torch.cuda.is_available():
-    torch.cuda.manual_seed(42)
-    torch.cuda.manual_seed_all(42)
+    torch.cuda.manual_seed(SEED)
+    torch.cuda.manual_seed_all(SEED)
 
     # Additionally, some operations on a GPU are implemented stochastic for efficiency
     # We want to ensure that all operations are deterministic on GPU (if used) for reproducibility

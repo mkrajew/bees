@@ -1,5 +1,6 @@
 """
-This module provides Dataset classes for loading and preprocessing wing images with their keypoint coordinate labels.
+This module provides Dataset classes and utils for loading and preprocessing
+wing images with their keypoint coordinate labels.
 
 Each image is associated with a CSV entry containing 19 (x, y) coordinate pairs (total 38 values) used as labels.
 The datasets support per-image preprocessing, on-the-fly normalization of coordinates based on image size, and
@@ -43,8 +44,7 @@ class WingsDataset(data.Dataset):
 
     preprocess_func: Callable[[torch.Tensor], torch.Tensor]
 
-    def __init__(self, countries: list[str], data_folder: Path,
-                 preprocess_func: Callable[[torch.Tensor], Any]) -> None:
+    def __init__(self, countries: list[str], data_folder: Path, preprocess_func: Callable[[torch.Tensor], Any]) -> None:
         """
         Initializes the dataset by loading filenames with their coordinates and preparing the dataframe.
 
@@ -65,7 +65,8 @@ class WingsDataset(data.Dataset):
             df = pd.read_csv(coords_file)
             self.coords_df = pd.concat([self.coords_df, df], ignore_index=True)
         self.coords_df['label'] = self.coords_df.iloc[:, 1:].progress_apply(
-            lambda row: torch.tensor(row.values, dtype=torch.float32), axis=1)
+            lambda row: torch.tensor(row.values, dtype=torch.float32), axis=1
+        )
         self.coords_df = self.coords_df[['file', 'label']]
         self.coords_df['normalized'] = False
 
@@ -134,7 +135,7 @@ class WingsDataset(data.Dataset):
         return train_set, valid_set, test_set
 
 
-class WingsDatasetRectangleImage(WingsDataset):
+class WingsDatasetRectangleImages(WingsDataset):
     """
     Extends WingsDataset enabling supporting images with rectangular padding during preprocessing.
 
@@ -148,7 +149,7 @@ class WingsDatasetRectangleImage(WingsDataset):
         """
         Loads and preprocesses an image tensor, additionally returning padding sizes.
         """
-        tup, x_size, y_size = super(WingsDatasetRectangleImage, self).load_image(filename)
+        tup, x_size, y_size = super(WingsDatasetRectangleImages, self).load_image(filename)
         image, pad_top, pad_bottom = tup
         print(x_size, y_size)
         return image, x_size, y_size, pad_top, pad_bottom
@@ -165,3 +166,25 @@ class WingsDatasetRectangleImage(WingsDataset):
         labels = self.coords_df.loc[index, 'label']
 
         return image, labels
+
+
+def load_datasets(files: list[Path]) -> tuple[Dataset, Dataset, Dataset]:
+    """
+    Loads pre-saved PyTorch datasets from the specified file paths.
+
+    This utility function expects three file path corresponding to the training, validation, and test sets.
+    It returns these datasets as PyTorch `Dataset` objects, which can be used directly with DataLoaders.
+
+    Args:
+        files: A list of three Path objects pointing to the training, validation,
+               and testing dataset files in that order.
+
+    Returns:
+        A tuple containing the loaded training, validation, and test datasets.
+    """
+
+    train_dataset = torch.load(files[0], weights_only=False)
+    val_dataset = torch.load(files[1], weights_only=False)
+    test_dataset = torch.load(files[2], weights_only=False)
+
+    return train_dataset, val_dataset, test_dataset

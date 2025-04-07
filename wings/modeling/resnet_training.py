@@ -1,10 +1,11 @@
+import torch
+from loguru import logger
 from torchvision.models import resnet50, ResNet50_Weights
 
-from wings.config import COUNTRIES, RAW_DATA_DIR, DEVICE, MODELLING_DIR
-from wings.dataset import WingsDataset
+from wings.config import DEVICE, MODELLING_DIR, PROCESSED_DATA_DIR
+from wings.dataset import load_datasets
 from wings.modeling.models import ResnetPreTrained
 from wings.modeling.training import train
-from wings.visualizing.image_preprocess import resize_preprocess
 
 run_num = 4
 run_name = "no-crop"
@@ -18,17 +19,20 @@ PARAMETERS = {
     "num_epochs": 50,
     "batch_size": 16,
     "num_workers": 4,
-    "val_split": 0.2,
-    "test_split": 0.1,
     "early_stop_min_delta": 20,
     "early_stop_patience": 12,
 }
 
 if __name__ == "__main__":
+    train_val_test_datasets = load_datasets(
+        [PROCESSED_DATA_DIR / 'train_dataset.pth',
+         PROCESSED_DATA_DIR / 'val_dataset.pth',
+         PROCESSED_DATA_DIR / 'test_dataset.pth']
+    )
+    logger.info("Loaded datasets.")
+
     weights = ResNet50_Weights.DEFAULT
-    # resnet_dataset = Dataset(COUNTRIES, RAW_DATA_DIR, weights.transforms())
-    resnet_dataset = WingsDataset(COUNTRIES, RAW_DATA_DIR, resize_preprocess)
     model = ResnetPreTrained(resnet50, weights)
     model.to(DEVICE)
 
-    train(model, resnet_dataset, PARAMETERS)
+    train(model, train_val_test_datasets, PARAMETERS)

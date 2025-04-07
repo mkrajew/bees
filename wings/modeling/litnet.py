@@ -5,7 +5,7 @@ import torchmetrics
 
 
 class LitNet(L.LightningModule):
-    def __init__(self, model, num_epochs):
+    def __init__(self, model: nn.Module, num_epochs: int) -> None:
         super().__init__()
         self.model = model
         self.criterion = nn.MSELoss()
@@ -13,10 +13,10 @@ class LitNet(L.LightningModule):
 
         self.mse_test = torchmetrics.regression.MeanSquaredError()
 
-    def forward(self, x):
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
         return self.model(x)
 
-    def training_step(self, batch, batch_idx):
+    def training_step(self, batch, batch_idx: int):
         x, target = batch
         target = target.float()
         output = self.model(x)
@@ -25,14 +25,14 @@ class LitNet(L.LightningModule):
 
         return loss
 
-    def validation_step(self, batch, batch_idx):
+    def validation_step(self, batch, batch_idx: int):
         x, target = batch
         target = target.float()
         output = self.model(x)
         loss = self.criterion(output, target)
         self.log('val_loss', loss, on_step=False, on_epoch=True, prog_bar=True)
 
-    def test_step(self, batch, batch_idx):
+    def test_step(self, batch, batch_idx: int):
         x, target = batch
         target = target.float()
         output = self.model(x)
