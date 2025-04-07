@@ -1,10 +1,10 @@
 from torchvision.models import ViT_B_32_Weights, vit_b_32
 
 from wings.config import COUNTRIES, RAW_DATA_DIR, DEVICE, MODELLING_DIR
-from wings.dataset import Dataset
+from wings.dataset import WingsDataset
 from wings.modeling.models import TransformerPreTrained
 from wings.modeling.training import train
-from wings.visualizing.image_preprocess import preprocess
+from wings.visualizing.image_preprocess import resize_preprocess
 
 run_num = 1
 run_name = "test-train-func"
@@ -27,8 +27,8 @@ PARAMETERS = {
 if __name__ == "__main__":
     weights = ViT_B_32_Weights.DEFAULT
     # resnet_dataset = Dataset(COUNTRIES, RAW_DATA_DIR, weights.transforms())
-    resnet_dataset = Dataset(COUNTRIES, RAW_DATA_DIR, preprocess)
+    transformer_dataset = WingsDataset(COUNTRIES, RAW_DATA_DIR, resize_preprocess)
     model = TransformerPreTrained(vit_b_32, weights)
     model.to(DEVICE)
 
-    train(model, resnet_dataset, PARAMETERS)
+    train(model, transformer_dataset, PARAMETERS)

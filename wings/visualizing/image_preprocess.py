@@ -1,7 +1,7 @@
 """
 Image preprocessing utilities for deep learning models.
 
-This module provides functions to preprocess and reverse-preprocess images
+This module provides functions to resize_preprocess and reverse-resize_preprocess images
 in a way that aligns with standard pipelines used in pretrained models (e.g., ResNet, ViT).
 
 Constants:
@@ -17,12 +17,12 @@ mean = [0.485, 0.456, 0.406]
 std = [0.229, 0.224, 0.225]
 
 
-def preprocess(img: torch.Tensor) -> torch.Tensor:
+def resize_preprocess(img: torch.Tensor) -> torch.Tensor:
     """
     Preprocesses an input image for use with ResNet and Vision Transformer (ViT) models.
 
     This function applies standard preprocessing steps used for models trained on ImageNet.
-    Note: Unlike some preprocessing pipelines that apply center cropping, this function
+    Unlike some preprocessing pipelines that apply center cropping, this function
     resizes the image directly to 224x224, preserving more of the original image content.
 
     Steps:
@@ -77,3 +77,36 @@ def denormalize(img: torch.Tensor) -> np.ndarray:
         img = (img * 255).astype(np.uint8)
     img = np.ascontiguousarray(img)
     return img
+
+
+def fit_rectangle_preprocess(img: torch.Tensor) -> tuple[torch.Tensor, int, int]:
+    """
+    Resizes and pads an image to fit into a 224x224 square while preserving aspect ratio.
+
+    Steps:
+    1. Resizes the image so that the width dimension is 224 pixels, preserving aspect ratio.
+       Asserts that the width of the image is bigger than its height.
+    2. Applies vertical padding (top and bottom) to reach a final height of 224 pixels.
+    3. Converts the image to float and normalizes it using ImageNet mean and standard deviation.
+
+    This preprocessing avoids the distortion caused by direct resizing of rectangular images.
+
+    Args:
+        img: Input image tensor of shape (C, H, W), typically with dtype uint8 or float.
+
+    Returns:
+        A tuple of:
+            - Preprocessed image tensor of shape (3, 224, 224), normalized.
+            - Number of pixels padded at the top.
+            - Number of pixels padded at the bottom.
+    """
+
+    img = F.resize(img, 223, interpolation=F.InterpolationMode.BILINEAR, antialias=True, max_size=224)
+    _, h, w = img.shape
+    pad_top = (224 - h) // 2
+    pad_bottom = 224 - h - pad_top
+    img = F.pad(img, [0, pad_top, 0, pad_bottom], padding_mode='constant', fill=0)
+    img = F.convert_image_dtype(img, torch.float)
+    img = F.normalize(img, mean=mean, std=std)
+
+    return img, pad_top, pad_bottom

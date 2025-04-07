@@ -1,10 +1,10 @@
 from torchvision.models import resnet50, ResNet50_Weights
 
 from wings.config import COUNTRIES, RAW_DATA_DIR, DEVICE, MODELLING_DIR
-from wings.dataset import Dataset
+from wings.dataset import WingsDataset
 from wings.modeling.models import ResnetPreTrained
 from wings.modeling.training import train
-from wings.visualizing.image_preprocess import preprocess
+from wings.visualizing.image_preprocess import resize_preprocess
 
 run_num = 4
 run_name = "no-crop"
@@ -27,7 +27,7 @@ PARAMETERS = {
 if __name__ == "__main__":
     weights = ResNet50_Weights.DEFAULT
     # resnet_dataset = Dataset(COUNTRIES, RAW_DATA_DIR, weights.transforms())
-    resnet_dataset = Dataset(COUNTRIES, RAW_DATA_DIR, preprocess)
+    resnet_dataset = WingsDataset(COUNTRIES, RAW_DATA_DIR, resize_preprocess)
     model = ResnetPreTrained(resnet50, weights)
     model.to(DEVICE)
 
