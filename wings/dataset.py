@@ -168,6 +168,12 @@ class WingsDatasetRectangleImages(WingsDataset):
         return image, labels
 
 
+
+class MasksDataset(data.Dataset):
+    def __init__(self):
+        super(MasksDataset, self).__init__()
+
+
 def load_datasets(files: list[Path]) -> tuple[Dataset, Dataset, Dataset]:
     """
     Loads pre-saved PyTorch datasets from the specified file paths.

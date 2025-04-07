@@ -80,7 +80,7 @@ def visualize_coords(
 
     x_size, y_size = img.shape[1], img.shape[0]
     x_coords, y_coords = targets[::2], targets[1::2]
-    y_coords = y_size - y_coords
+    y_coords = y_size - y_coords - 1
 
     for x, y in zip(x_coords, y_coords):
         x, y = int(x), int(y)
