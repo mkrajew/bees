@@ -40,6 +40,7 @@ class WingsDataset(data.Dataset):
         coords_df: A Pandas Dataframe containing the filenames and corresponding coordinates
             with information if they were already normalized.
         preprocess_func: Function used to preprocess the images.
+        countries: List of country names where the images in the dataset come from.
     """
 
     preprocess_func: Callable[[torch.Tensor], torch.Tensor]
@@ -58,6 +59,7 @@ class WingsDataset(data.Dataset):
 
         self.data_folder = data_folder
         self.preprocess_func = preprocess_func
+        self.countries = countries
 
         self.coords_df = pd.DataFrame()
         for country in countries:
@@ -109,9 +111,9 @@ class WingsDataset(data.Dataset):
         x_size, y_size = image.shape[2], image.shape[1]
         if not self.coords_df.loc[index, 'normalized']:
             self.coords_df.loc[index, 'label'][::2] = (
-                        self.coords_df.loc[index, 'label'][::2] * x_size / orig_x_size).int()
+                    self.coords_df.loc[index, 'label'][::2] * x_size / orig_x_size).int()
             self.coords_df.loc[index, 'label'][1::2] = (
-                        self.coords_df.loc[index, 'label'][1::2] * y_size / orig_y_size).int()
+                    self.coords_df.loc[index, 'label'][1::2] * y_size / orig_y_size).int()
             self.coords_df.loc[index, 'normalized'] = True
         labels = self.coords_df.loc[index, 'label']
         return image, labels
