@@ -7,19 +7,19 @@ from wings.modeling.models import TransformerPreTrained
 from wings.modeling.training import train
 
 run_num = 1
-run_name = "test-train-func"
+run_name = "test-transformer"
 model_name = 'transformer32'
 PARAMETERS = {
-    "project_name": "bees-wings-modeling",
+    "project_name": "bees-wings-modeling2",
     "logger_save_dir": MODELLING_DIR,
     "run_name": f"{run_name}_{run_num}",
-    "checkpoint_save_dir": MODELLING_DIR / "lightning-checkpoints" / model_name,
+    "checkpoint_save_dir": MODELLING_DIR / "lightning-checkpoints" / model_name / "square_images",
     "checkpoint_filename": model_name + "-{epoch:02d}-{val_loss:.2f}-" + f"{run_name}_{run_num}",
-    "num_epochs": 50,
+    "num_epochs": 60,
     "batch_size": 16,
     "num_workers": 4,
-    "early_stop_min_delta": 20,
-    "early_stop_patience": 12,
+    "early_stop_min_delta": 0.1,
+    "early_stop_patience": 5,
 }
 
 if __name__ == "__main__":
