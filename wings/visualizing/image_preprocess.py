@@ -12,6 +12,7 @@ Constants:
 import numpy as np
 import torch
 import torchvision.transforms.functional as F
+from torchvision import transforms
 
 mean = [0.485, 0.456, 0.406]
 std = [0.229, 0.224, 0.225]
@@ -45,6 +46,15 @@ def resize_preprocess(img: torch.Tensor) -> torch.Tensor:
         img = F.pil_to_tensor(img)
     img = F.convert_image_dtype(img, torch.float)
     img = F.normalize(img, mean=mean, std=std)
+    return img
+
+
+def unet_preprocess(img: torch.Tensor) -> torch.Tensor:
+    img = F.resize(img, [256, 256], interpolation=F.InterpolationMode.BILINEAR, antialias=True)
+    m, s = np.mean(img, axis=(0, 1)), np.std(img, axis=(0, 1))
+    # preprocess = transforms.Normalize(mean=m, std=s)
+    # img = preprocess(img)
+    img = transforms.Normalize(mean=m, std=s)(img)
     return img
 
 
@@ -103,10 +113,18 @@ def fit_rectangle_preprocess(img: torch.Tensor) -> tuple[torch.Tensor, int, int]
 
     img = F.resize(img, 223, interpolation=F.InterpolationMode.BILINEAR, antialias=True, max_size=224)
     _, h, w = img.shape
-    pad_top = (224 - h) // 2
-    pad_bottom = 224 - h - pad_top
-    img = F.pad(img, [0, pad_top, 0, pad_bottom], padding_mode='constant', fill=0)
+    if w >= h:
+        pad_left = 0
+        pad_top = (224 - h) // 2
+        pad_right = 0
+        pad_bottom = 224 - h - pad_top
+    else:
+        pad_left = (224 - w) // 2
+        pad_top = 0
+        pad_right = 224 - w - pad_left
+        pad_bottom = 0
+    img = F.pad(img, [pad_left, pad_top, pad_right, pad_bottom], padding_mode='constant', fill=0)
     img = F.convert_image_dtype(img, torch.float)
     img = F.normalize(img, mean=mean, std=std)
 
-    return img, pad_top, pad_bottom
+    return img, pad_left, pad_bottom

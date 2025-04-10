@@ -153,19 +153,20 @@ class WingsDatasetRectangleImages(WingsDataset):
         Loads and preprocesses an image tensor, additionally returning padding sizes.
         """
         tup, x_size, y_size = super(WingsDatasetRectangleImages, self).load_image(filename)
-        image, pad_top, pad_bottom = tup
-        print(x_size, y_size)
-        return image, x_size, y_size, pad_top, pad_bottom
+        image, pad_left, pad_bottom = tup
+        return image, x_size, y_size, pad_left, pad_bottom
 
     @override
     def __getitem__(self, index: int) -> tuple[torch.Tensor, torch.Tensor]:
         filename = self.coords_df.loc[index, 'file']
-        image, orig_x_size, _, _, pad_bottom = self.load_image(filename)
-        x_size = image.shape[2]
+        image, orig_x_size, orig_y_size, pad_left, pad_bottom = self.load_image(filename)
+        x_size, y_size = image.shape[2], image.shape[1]
+        factor = x_size / orig_x_size if orig_x_size >= orig_y_size else y_size / orig_y_size
         if not self.coords_df.loc[index, 'normalized']:
-            self.coords_df.loc[index, 'label'][::2] = (self.coords_df.loc[index, 'label'][::2] * x_size / orig_x_size).int()
+            self.coords_df.loc[index, 'label'][::2] = (self.coords_df.loc[index, 'label'][
+                                                       ::2] * factor).int() + pad_left
             self.coords_df.loc[index, 'label'][1::2] = (self.coords_df.loc[index, 'label'][
-                                                        1::2] * x_size / orig_x_size).int() + pad_bottom
+                                                        1::2] * factor).int() + pad_bottom
             self.coords_df.loc[index, 'normalized'] = True
         labels = self.coords_df.loc[index, 'label']
 

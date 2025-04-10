@@ -34,7 +34,7 @@ def plt_imshow(img: np.ndarray, img_title: str | None = None) -> None:
     plt.show()
 
 
-def visualize_from_file(filename: str, data_folder: Path | str = RAW_DATA_DIR) -> None:
+def visualize_from_file(filename: str, data_folder: Path | str = RAW_DATA_DIR, spot_size: int = 6) -> None:
     """
     Loads an image and its corresponding coordinate annotations from files,
     then visualizes the annotated coordinates on the image using function visualize_coords.
@@ -42,6 +42,7 @@ def visualize_from_file(filename: str, data_folder: Path | str = RAW_DATA_DIR) -
     Args:
         filename: Name of the image file.
         data_folder: Root folder containing the image and coordinate subfolders.
+        spot_size: Size of the marking spot.
     """
 
     country = filename.split('-', 1)[0]
@@ -54,7 +55,7 @@ def visualize_from_file(filename: str, data_folder: Path | str = RAW_DATA_DIR) -
     targets = pd.to_numeric(row.iloc[1:].values)
     targets = torch.tensor(targets, dtype=torch.float32)
 
-    visualize_coords(img, targets, filename=filename)
+    visualize_coords(img, targets, filename=filename, spot_size=spot_size)
 
 
 def visualize_coords(
