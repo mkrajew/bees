@@ -12,7 +12,6 @@ Constants:
 import numpy as np
 import torch
 import torchvision.transforms.functional as F
-from torchvision import transforms
 
 mean = [0.485, 0.456, 0.406]
 std = [0.229, 0.224, 0.225]
@@ -50,11 +49,19 @@ def resize_preprocess(img: torch.Tensor) -> torch.Tensor:
 
 
 def unet_preprocess(img: torch.Tensor) -> torch.Tensor:
-    img = F.resize(img, [256, 256], interpolation=F.InterpolationMode.BILINEAR, antialias=True)
-    m, s = np.mean(img, axis=(0, 1)), np.std(img, axis=(0, 1))
-    # preprocess = transforms.Normalize(mean=m, std=s)
-    # img = preprocess(img)
-    img = transforms.Normalize(mean=m, std=s)(img)
+    """
+    Resizes image tensor to 256x256 pixels and normalizes z-score per volume.
+
+    Args:
+        img: Input image tensor or PIL image.
+
+    Returns:
+        Preprocessed image tensor ready for U-Net model input.
+    """
+    img = F.resize(img, [256, 256], interpolation=F.InterpolationMode.BILINEAR, antialias=False)
+    img = F.convert_image_dtype(img, torch.float)
+    m, s = img.mean(dim=(1, 2)), img.std(dim=(1, 2))
+    img = F.normalize(img, mean=m, std=s)
     return img
 
 

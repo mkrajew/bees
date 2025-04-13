@@ -15,6 +15,7 @@ Usage Example:
 from pathlib import Path
 from typing import override, Callable, Any
 
+import numpy as np
 import pandas as pd
 import torch
 import torch.utils.data as data
@@ -175,14 +176,39 @@ class WingsDatasetRectangleImages(WingsDataset):
         return image, labels
 
 
-class MasksDataset(data.Dataset):
-    def __init__(self):
-        super(MasksDataset, self).__init__()
+class MasksDataset(WingsDataset):
+    def __init__(
+            self,
+            countries: list[str],
+            data_folder: Path,
+            preprocess_func: Callable[[torch.Tensor], Any],
+            square_size: int = 5
+    ) -> None:
+        super(MasksDataset, self).__init__(countries, data_folder, preprocess_func)
+        self.square_size = square_size
 
     @override
     def __getitem__(self, index: int) -> tuple[torch.Tensor, torch.Tensor]:
         image, labels = super(MasksDataset, self).__getitem__(index)
-        mask = torch.Tensor([0.])
+        x_coords, y_coords = labels[::2].int(), labels[1::2].int()
+        x_size, y_size = image.shape[2], image.shape[1]
+        assert x_size == y_size
+        img_size = x_size
+
+        y_coords = y_size - y_coords - 1
+
+        mask = np.zeros((img_size, img_size), dtype=np.float32)
+        square_half = self.square_size // 2
+        for x, y in zip(x_coords, y_coords):
+            x, y = int(x), int(y)
+            x_start = max(0, x - square_half)
+            x_end = min(img_size, x + square_half + 1)
+            y_start = max(0, y - square_half)
+            y_end = min(img_size, y + square_half + 1)
+
+            mask[y_start:y_end, x_start:x_end] = 1
+
+        mask = torch.from_numpy(mask).unsqueeze(0)
         return image, mask
 
 
