@@ -6,7 +6,7 @@ from lightning.pytorch.callbacks import RichProgressBar
 from lightning.pytorch.callbacks.early_stopping import EarlyStopping
 from lightning.pytorch.loggers import WandbLogger
 
-from litnet import LitNet
+from wings.modeling.litnet import LitNet
 
 
 def train(model: torch.nn.Module, datasets: tuple[data.Dataset, data.Dataset, data.Dataset], params: dict) -> None:

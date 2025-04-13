@@ -28,3 +28,20 @@ Total params: 23.6 M
 Total estimated model params size (MB): 94
 Modules in train mode: 154
 Modules in eval mode: 0
+
+
+
+
+┏━━━┳━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━┳━━━━━━━━┳━━━━━━━┓
+┃   ┃ Name      ┃ Type             ┃ Params ┃ Mode  ┃
+┡━━━╇━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━╇━━━━━━━━╇━━━━━━━┩
+│ 0 │ model     │ UNet             │  7.8 M │ train │
+│ 1 │ criterion │ DiceLoss         │      0 │ train │
+│ 2 │ mse_test  │ MeanSquaredError │      0 │ train │
+└───┴───────────┴──────────────────┴────────┴───────┘
+Trainable params: 7.8 M
+Non-trainable params: 0
+Total params: 7.8 M
+Total estimated model params size (MB): 31
+Modules in train mode: 75
+Modules in eval mode: 0

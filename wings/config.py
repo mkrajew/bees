@@ -47,7 +47,7 @@ EXTERNAL_DATA_DIR = DATA_PATH / 'external'
 
 MODELS_DIR = PROJ_ROOT / 'models'
 MODELLING_DIR = PROJ_ROOT / 'wings' / 'modeling'
-TRAINING_DIR = MODELS_DIR / 'training'
+TRAINING_DIR = MODELLING_DIR / 'training'
 
 REPORTS_DIR = PROJ_ROOT / 'reports'
 FIGURES_DIR = PROJ_ROOT / 'figures'
