@@ -5,7 +5,7 @@ from torchvision.models import ViT_B_32_Weights, vit_b_32, ResNet50_Weights, res
 from wings.config import PROCESSED_DATA_DIR, MODELLING_DIR, DEVICE
 from wings.dataset import load_datasets
 from wings.modeling.models import TransformerPreTrained, ResnetPreTrained
-from wings.modeling.training import train
+from wings.modeling.train import train
 
 run_num = 2
 run_name = "rectangle_images"

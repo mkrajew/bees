@@ -5,7 +5,7 @@ from torchvision.models import ViT_B_32_Weights, vit_b_32
 from wings.config import DEVICE, MODELLING_DIR, PROCESSED_DATA_DIR
 from wings.dataset import load_datasets
 from wings.modeling.models import TransformerPreTrained
-from wings.modeling.training import train
+from wings.modeling.train import train
 
 run_num = 1
 run_name = "test-transformer"

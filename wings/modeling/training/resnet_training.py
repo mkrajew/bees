@@ -5,7 +5,7 @@ from torchvision.models import resnet50, ResNet50_Weights
 from wings.config import DEVICE, MODELLING_DIR, PROCESSED_DATA_DIR
 from wings.dataset import load_datasets
 from wings.modeling.models import ResnetPreTrained
-from wings.modeling.training import train
+from wings.modeling.train import train
 
 run_num = 4
 run_name = "no-crop"
