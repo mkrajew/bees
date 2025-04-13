@@ -31,9 +31,10 @@ def train(model: torch.nn.Module, datasets: tuple[data.Dataset, data.Dataset, da
             - "checkpoint_filename" (str): Filename pattern for checkpoint files.
             - "batch_size" (int): Batch size for all dataloaders.
             - "num_workers" (int): Number of subprocesses to use for data loading.
+            - "criterion" (torch.nn.Module): Loss function to optimize.
     """
 
-    lit_net = LitNet(model, num_epochs=params["num_epochs"])
+    lit_net = LitNet(model, criterion=params["criterion"], num_epochs=params["num_epochs"])
 
     wandb_logger = WandbLogger(
         project=params["project_name"],

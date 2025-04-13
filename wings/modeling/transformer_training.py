@@ -1,4 +1,5 @@
 from loguru import logger
+from torch import nn
 from torchvision.models import ViT_B_32_Weights, vit_b_32
 
 from wings.config import DEVICE, MODELLING_DIR, PROCESSED_DATA_DIR
@@ -20,6 +21,7 @@ PARAMETERS = {
     "num_workers": 4,
     "early_stop_min_delta": 0.1,
     "early_stop_patience": 5,
+    "criterion": nn.MSELoss,
 }
 
 if __name__ == "__main__":

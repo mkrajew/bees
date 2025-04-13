@@ -1,5 +1,5 @@
-import torch
 from loguru import logger
+from torch import nn
 from torchvision.models import resnet50, ResNet50_Weights
 
 from wings.config import DEVICE, MODELLING_DIR, PROCESSED_DATA_DIR
@@ -21,6 +21,7 @@ PARAMETERS = {
     "num_workers": 4,
     "early_stop_min_delta": 20,
     "early_stop_patience": 12,
+    "criterion": nn.MSELoss,
 }
 
 if __name__ == "__main__":

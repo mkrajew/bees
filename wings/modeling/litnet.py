@@ -5,10 +5,10 @@ import torchmetrics
 
 
 class LitNet(L.LightningModule):
-    def __init__(self, model: nn.Module, num_epochs: int) -> None:
+    def __init__(self, model: nn.Module, criterion: nn.Module, num_epochs: int) -> None:
         super().__init__()
         self.model = model
-        self.criterion = nn.MSELoss()
+        self.criterion = criterion
         self.num_epochs = num_epochs
 
         self.mse_test = torchmetrics.regression.MeanSquaredError()
