@@ -2,7 +2,7 @@ from loguru import logger
 from torch import nn
 from torchvision.models import resnet50, ResNet50_Weights
 
-from wings.config import DEVICE, MODELLING_DIR, PROCESSED_DATA_DIR
+from wings.config import DEVICE, TRAINING_DIR, PROCESSED_DATA_DIR
 from wings.dataset import load_datasets
 from wings.modeling.models import ResnetPreTrained
 from wings.modeling.train import train
@@ -12,9 +12,9 @@ run_name = "no-crop"
 model_name = 'resnet50'
 PARAMETERS = {
     "project_name": "bees-wings-modeling",
-    "logger_save_dir": MODELLING_DIR,
+    "logger_save_dir": TRAINING_DIR,
     "run_name": f"{run_name}_{run_num}",
-    "checkpoint_save_dir": MODELLING_DIR / "lightning-checkpoints" / model_name,
+    "checkpoint_save_dir": TRAINING_DIR / "lightning-checkpoints" / model_name,
     "checkpoint_filename": model_name + "-{epoch:02d}-{val_loss:.2f}-" + f"{run_name}_{run_num}",
     "num_epochs": 50,
     "batch_size": 16,
@@ -25,10 +25,11 @@ PARAMETERS = {
 }
 
 if __name__ == "__main__":
+    data_dir = PROCESSED_DATA_DIR / "resize_datasets"
     train_val_test_datasets = load_datasets(
-        [PROCESSED_DATA_DIR / 'train_dataset.pth',
-         PROCESSED_DATA_DIR / 'val_dataset.pth',
-         PROCESSED_DATA_DIR / 'test_dataset.pth']
+        [data_dir / 'train_dataset.pth',
+         data_dir / 'val_dataset.pth',
+         data_dir / 'test_dataset.pth']
     )
     logger.info("Loaded datasets.")
 
