@@ -9,7 +9,6 @@ from wings.modeling.train import train
 run_num = 1
 run_name = "unet-training"
 model_name = 'unet'
-criterion = DiceLoss()
 PARAMETERS = {
     "project_name": "bees-wings-modeling3",
     "logger_save_dir": TRAINING_DIR,
@@ -21,7 +20,7 @@ PARAMETERS = {
     "num_workers": 10,
     "early_stop_min_delta": 0.1,
     "early_stop_patience": 5,
-    "criterion": criterion,
+    "criterion": DiceLoss(),
 }
 
 if __name__ == "__main__":
