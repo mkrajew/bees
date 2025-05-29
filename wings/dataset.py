@@ -199,9 +199,15 @@ class MasksDataset(WingsDataset):
     @override
     def __getitem__(self, index: int) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, tuple[int, int]]:
         image, labels = super(MasksDataset, self).__getitem__(index)
+        mask = self.generate_mask(image, labels)
+        orig_size = self.coords_df.loc[index, 'orig_size']
+        orig_labels = self.coords_df.loc[index, 'orig_label']
+        return image, mask, orig_labels, orig_size
+
+    def generate_mask(self, image: torch.Tensor, labels: torch.Tensor) -> torch.Tensor:
         x_coords, y_coords = labels[::2].int(), labels[1::2].int()
         x_size, y_size = image.shape[2], image.shape[1]
-        assert x_size == y_size
+        assert x_size == y_size, f"Expected square image, got {x_size=} {y_size=}"
         img_size = x_size
 
         y_coords = y_size - y_coords - 1
@@ -209,17 +215,24 @@ class MasksDataset(WingsDataset):
         mask = np.zeros((img_size, img_size), dtype=np.float32)
         square_half = self.square_size // 2
         for x, y in zip(x_coords, y_coords):
-            x, y = int(x), int(y)
             x_start = max(0, x - square_half)
             x_end = min(img_size, x + square_half + 1)
             y_start = max(0, y - square_half)
             y_end = min(img_size, y + square_half + 1)
-
             mask[y_start:y_end, x_start:x_end] = 1
 
+        return torch.from_numpy(mask).unsqueeze(0)
+
+
+class MaskRectangleDataset(MasksDataset, WingsDatasetRectangleImages):
+    preprocess_func: Callable[[torch.Tensor], tuple[torch.Tensor, int, int]]
+
+    @override
+    def __getitem__(self, index: int) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, tuple[int, int]]:
+        image, labels = WingsDatasetRectangleImages.__getitem__(self, index)
+        mask = self.generate_mask(image, labels)
         orig_size = self.coords_df.loc[index, 'orig_size']
         orig_labels = self.coords_df.loc[index, 'orig_label']
-        mask = torch.from_numpy(mask).unsqueeze(0)
         return image, mask, orig_labels, orig_size
 
 

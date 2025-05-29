@@ -66,6 +66,27 @@ def unet_preprocess(img: torch.Tensor) -> torch.Tensor:
     return img
 
 
+def unet_fit_rectangle_preprocess(img: torch.Tensor) -> tuple[torch.Tensor, int, int]:
+    img = F.resize(img, 255, interpolation=F.InterpolationMode.BILINEAR, antialias=True, max_size=256)
+    _, h, w = img.shape
+    if w >= h:
+        pad_left = 0
+        pad_top = (256 - h) // 2
+        pad_right = 0
+        pad_bottom = 256 - h - pad_top
+    else:
+        pad_left = (256 - w) // 2
+        pad_top = 0
+        pad_right = 256 - w - pad_left
+        pad_bottom = 0
+    img = F.pad(img, [pad_left, pad_top, pad_right, pad_bottom], padding_mode='constant', fill=0)
+    img = F.convert_image_dtype(img, torch.float)
+    m, s = img.mean(dim=(1, 2)), img.std(dim=(1, 2))
+    img = F.normalize(img, mean=m, std=s)
+
+    return img, pad_left, pad_bottom
+
+
 def denormalize(img: torch.Tensor) -> np.ndarray:
     """
     Reverses ImageNet-style normalization on a tensor image.
