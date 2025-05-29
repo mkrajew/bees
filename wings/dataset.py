@@ -67,12 +67,13 @@ class WingsDataset(data.Dataset):
             coords_file = data_folder / f"{country}{COORDS_SUFX}"
             df = pd.read_csv(coords_file)
             self.coords_df = pd.concat([self.coords_df, df], ignore_index=True)
-        self.coords_df['label'] = self.coords_df.iloc[:, 1:].progress_apply(
+        self.coords_df['orig_label'] = self.coords_df.iloc[:, 1:].progress_apply(
             lambda row: torch.tensor(row.values, dtype=torch.float32), axis=1
         )
-        self.coords_df = self.coords_df[['file', 'label']]
+        self.coords_df = self.coords_df[['file', 'orig_label']]
         self.coords_df['normalized'] = False
         self.coords_df['orig_size'] = None
+        self.coords_df['label'] = None
 
     def load_image(self, filename: str) -> tuple[torch.Tensor, int, int]:
         """
@@ -110,15 +111,18 @@ class WingsDataset(data.Dataset):
 
         filename = self.coords_df.loc[index, 'file']
         image, orig_x_size, orig_y_size = self.load_image(filename)
+        self.coords_df.at[index, 'orig_size'] = (orig_x_size, orig_y_size)
         x_size, y_size = image.shape[2], image.shape[1]
         if not self.coords_df.loc[index, 'normalized']:
+            self.coords_df.at[index, 'label'] = torch.zeros_like(self.coords_df.at[index, 'orig_label'])
             self.coords_df.loc[index, 'label'][::2] = (
-                    self.coords_df.loc[index, 'label'][::2] * x_size / orig_x_size).int()
+                    self.coords_df.loc[index, 'orig_label'][::2] * x_size / orig_x_size).int()
             self.coords_df.loc[index, 'label'][1::2] = (
-                    self.coords_df.loc[index, 'label'][1::2] * y_size / orig_y_size).int()
-            # self.coords_df.at[index, 'orig_size'] = (orig_x_size, orig_y_size)
+                    self.coords_df.loc[index, 'orig_label'][1::2] * y_size / orig_y_size).int()
             self.coords_df.loc[index, 'normalized'] = True
+
         labels = self.coords_df.loc[index, 'label']
+
         return image, labels
 
     def split(self, val_percentage: float = 0.2, test_percentage: float = 0.1) -> tuple[Dataset, Dataset, Dataset]:
@@ -165,14 +169,17 @@ class WingsDatasetRectangleImages(WingsDataset):
     def __getitem__(self, index: int) -> tuple[torch.Tensor, torch.Tensor]:
         filename = self.coords_df.loc[index, 'file']
         image, orig_x_size, orig_y_size, pad_left, pad_bottom = self.load_image(filename)
+        self.coords_df.at[index, 'orig_size'] = (orig_x_size, orig_y_size)
         x_size, y_size = image.shape[2], image.shape[1]
         factor = x_size / orig_x_size if orig_x_size >= orig_y_size else y_size / orig_y_size
         if not self.coords_df.loc[index, 'normalized']:
-            self.coords_df.loc[index, 'label'][::2] = (self.coords_df.loc[index, 'label'][
+            self.coords_df.at[index, 'label'] = torch.zeros_like(self.coords_df.at[index, 'orig_label'])
+            self.coords_df.loc[index, 'label'][::2] = (self.coords_df.loc[index, 'orig_label'][
                                                        ::2] * factor).int() + pad_left
-            self.coords_df.loc[index, 'label'][1::2] = (self.coords_df.loc[index, 'label'][
+            self.coords_df.loc[index, 'label'][1::2] = (self.coords_df.loc[index, 'orig_label'][
                                                         1::2] * factor).int() + pad_bottom
             self.coords_df.loc[index, 'normalized'] = True
+
         labels = self.coords_df.loc[index, 'label']
 
         return image, labels
@@ -190,7 +197,7 @@ class MasksDataset(WingsDataset):
         self.square_size = square_size
 
     @override
-    def __getitem__(self, index: int) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    def __getitem__(self, index: int) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, tuple[int, int]]:
         image, labels = super(MasksDataset, self).__getitem__(index)
         x_coords, y_coords = labels[::2].int(), labels[1::2].int()
         x_size, y_size = image.shape[2], image.shape[1]
@@ -210,10 +217,10 @@ class MasksDataset(WingsDataset):
 
             mask[y_start:y_end, x_start:x_end] = 1
 
-        # orig_size = self.coords_df.loc[index, 'orig_size']
-
+        orig_size = self.coords_df.loc[index, 'orig_size']
+        orig_labels = self.coords_df.loc[index, 'orig_label']
         mask = torch.from_numpy(mask).unsqueeze(0)
-        return image, mask, labels
+        return image, mask, orig_labels, orig_size
 
 
 def load_datasets(files: list[Path]) -> tuple[Dataset, Dataset, Dataset]:

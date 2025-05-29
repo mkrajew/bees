@@ -1,5 +1,5 @@
 """
-Training UNET with masks with square size 5.
+Training UNET with masks with square size 3.
 """
 
 import torch
@@ -12,9 +12,9 @@ from wings.modeling.train import train
 
 # TODO: run this training
 
-run_num = 2
-run_name = "unet-training"
-model_name = 'unet'
+run_num = 1
+run_name = "unet-training-square3"
+model_name = 'unet-square3'
 PARAMETERS = {
     "project_name": "bees-wings-modeling3",
     "logger_save_dir": TRAINING_DIR,
@@ -30,11 +30,11 @@ PARAMETERS = {
 }
 
 if __name__ == "__main__":
-    data_dir = PROCESSED_DATA_DIR / "mask_datasets" / 'square5'
+    data_dir = PROCESSED_DATA_DIR / "mask_datasets" / 'square3'
     train_val_test_datasets = load_datasets(
-        [data_dir / 'train_mask_dataset2.pth',
-         data_dir / 'val_mask_dataset2.pth',
-         data_dir / 'test_mask_dataset2.pth']
+        [data_dir / 'train_mask_dataset.pth',
+         data_dir / 'val_mask_dataset.pth',
+         data_dir / 'test_mask_dataset.pth']
     )
     logger.info("Loaded datasets.")
 

@@ -17,7 +17,7 @@ class LitNet(L.LightningModule):
         return self.model(x)
 
     def training_step(self, batch, batch_idx: int):
-        x, target = batch
+        x, target, _, _ = batch
         target = target.float()
         output = self.model(x)
         loss = self.criterion(output, target)
@@ -26,19 +26,20 @@ class LitNet(L.LightningModule):
         return loss
 
     def validation_step(self, batch, batch_idx: int):
-        x, target = batch
+        x, target, _, _ = batch
         target = target.float()
         output = self.model(x)
         loss = self.criterion(output, target)
         self.log('val_loss', loss, on_step=False, on_epoch=True, prog_bar=True)
 
     def test_step(self, batch, batch_idx: int):
-        x, target = batch
+        x, target, _, _ = batch
         target = target.float()
         output = self.model(x)
+        loss = self.criterion(output, target)
+        # self.mse_test(output, target)
 
-        self.mse_test(output, target)
-        self.log('test_loss', self.mse_test, on_step=False, on_epoch=True, prog_bar=True)
+        self.log('test_loss', loss, on_step=False, on_epoch=True, prog_bar=True)
 
     def configure_optimizers(self):
         optimizer = torch.optim.AdamW(self.model.parameters(), lr=1e-3, weight_decay=1e-5)
