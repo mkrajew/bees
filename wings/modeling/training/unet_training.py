@@ -10,8 +10,6 @@ from wings.dataset import load_datasets
 from wings.modeling.loss import DiceLoss
 from wings.modeling.train import train
 
-# TODO: run this training
-
 run_num = 2
 run_name = "unet-training"
 model_name = 'unet'

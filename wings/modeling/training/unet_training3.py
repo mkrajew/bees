@@ -11,8 +11,8 @@ from wings.modeling.loss import DiceLoss
 from wings.modeling.train import train
 
 run_num = 1
-run_name = "unet-training-square3"
-model_name = 'unet-square3'
+run_name = "unet-training-rectangle"
+model_name = 'unet-rectangle'
 PARAMETERS = {
     "project_name": "bees-wings-modeling3",
     "logger_save_dir": TRAINING_DIR,
@@ -28,7 +28,7 @@ PARAMETERS = {
 }
 
 if __name__ == "__main__":
-    data_dir = PROCESSED_DATA_DIR / "mask_datasets" / 'square3'
+    data_dir = PROCESSED_DATA_DIR / "mask_datasets" / "rectangle"
     train_val_test_datasets = load_datasets(
         [data_dir / 'train_mask_dataset.pth',
          data_dir / 'val_mask_dataset.pth',

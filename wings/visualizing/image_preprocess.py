@@ -169,7 +169,7 @@ def mask_to_coords(mask, max_iter=1):
 
     # Get center coordinates of each contour
     coordinates = []
-    iteration = 0
+    iteration = 1
     kernel_size = 3
     kernel = np.ones((kernel_size, kernel_size), np.uint8)
 
