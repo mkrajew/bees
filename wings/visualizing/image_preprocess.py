@@ -193,3 +193,49 @@ def mask_to_coords(mask, max_iter=1):
         iteration += 1
 
     raise Exception(f"Found {len(coordinates)} spots in mask.")
+
+
+def unet_reverse_padding(padded_img: torch.Tensor, w_orig: int, h_orig: int) -> tuple[int, int, int, int]:
+    """
+    Reverses the padding added during unet_fit_rectangle_preprocess.
+    Returns (pad_left, pad_top, pad_right, pad_bottom).
+    Assumes the padded image is 256x256 and resizing used max_size=256 with max dim 255.
+    """
+    padded_h, padded_w = padded_img.shape
+    assert padded_h == 256 and padded_w == 256, "Expected padded image to be 256x256"
+
+    # Recompute resize scale from original dimensions
+    if w_orig >= h_orig:
+        scale = 255 / w_orig
+    else:
+        scale = 255 / h_orig
+
+    resized_w = round(w_orig * scale)
+    resized_h = round(h_orig * scale)
+
+    pad_w_total = 256 - resized_w
+    pad_h_total = 256 - resized_h
+
+    pad_left = pad_w_total // 2
+    pad_right = pad_w_total - pad_left
+
+    pad_top = pad_h_total // 2
+    pad_bottom = pad_h_total - pad_top
+
+    return pad_left, pad_top, pad_right, pad_bottom
+
+
+def final_coords(mask, orig_width, orig_height):
+    mask_coords = mask_to_coords(mask, max_iter=1)
+
+    mask_height, mask_width = mask.shape
+
+    pad_left, pad_top, pad_right, pad_bottom = unet_reverse_padding(mask, orig_width, orig_height)
+
+    mask_coords = [(x - pad_left, y - pad_bottom) for x, y in mask_coords]
+
+    scale_x = orig_width / (mask_width - pad_right - pad_left)
+    scale_y = orig_height / (mask_height - pad_top - pad_bottom)
+    mask_coords = [(x * scale_x, y * scale_y) for x, y in mask_coords]
+
+    return mask_coords

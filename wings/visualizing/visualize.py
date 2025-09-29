@@ -66,7 +66,7 @@ def visualize_coords(
         spot_size: int = 6,
         show: bool = True,
         save_path: Path | str | None = None
-) -> None:
+) -> np.ndarray:
     """
     Draws target coordinates on an image as green circles and optionally displays or saves it.
 
@@ -92,3 +92,5 @@ def visualize_coords(
 
     if save_path:
         cv2.imwrite(save_path, img)
+
+    return img
