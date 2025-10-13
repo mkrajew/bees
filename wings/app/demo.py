@@ -49,8 +49,10 @@ def show_image(img_path):
     return (
         gr.update(visible=False),
         coords,
-        gr.update(value=img_name, visible=True),
+        gr.update(value=img_name),
+        gr.update(visible=True),
         gr.update(value=(img_path, sections_arr)),
+        gr.update(visible=True),
         gr.update(visible=True)
     )
 
@@ -85,30 +87,79 @@ def sections(img_path):
 
 with gr.Blocks() as demo:
     gr.Markdown("# Greeting for all the bees!")
-    coords_state = gr.State()
+    with gr.Tab("Single image") as single_image:
+        coords_state = gr.State()
 
-    file_input = gr.File(file_types=['image'], label="Upload a bee-wing image")
-    filename = gr.Textbox(visible=False, label="Filename:")
-    with gr.Row(visible=False) as image_coords_row:
-        output_image = gr.AnnotatedImage(color_map=label_colors, scale=4, height=500)
-        with gr.Column(scale=1) as chosen:
-            md_text = gr.Markdown(value="### Choose a point to see the coordinates")
-            selected_section_x = gr.Textbox(label="X Coordinate:", max_lines=1, scale=2)
-            selected_section_y = gr.Textbox(label="Y Coordinate:", max_lines=1, scale=2)
-            edit_button = gr.Button(value="Edit", scale=1)
+        file_input = gr.File(file_types=['image'], label="Upload a bee-wing image", height=500)
+        with gr.Row(visible=False, equal_height=True) as filename_buttons_row:
+            filename = gr.Textbox(label="Verify file name:", interactive=True, scale=4)
+            with gr.Column(scale=1):
+                download_button = gr.Button(value="Download data")
+                next_image_button = gr.Button(value="Next image")
+        with gr.Row(visible=False) as image_coords_row:
+            output_image = gr.AnnotatedImage(color_map=label_colors, scale=4, height=500)
+            with gr.Column(scale=1) as chosen:
+                md_text = gr.Markdown(value="### Choose a point to see the coordinates")
+                selected_section_x = gr.Textbox(label="X Coordinate:", max_lines=1, scale=2)
+                selected_section_y = gr.Textbox(label="Y Coordinate:", max_lines=1, scale=2)
+                edit_button = gr.Button(value="Edit", scale=1)
+        with gr.Accordion(visible=False, label="See all coordinates", open=False) as all_coords:
+            gr.Markdown("Hello there")
 
-    file_input.change(fn=show_image, inputs=file_input, outputs=[file_input, coords_state, filename, output_image, image_coords_row])
-
-
-    def select_section(evt: gr.SelectData, coords):
-        return (
-            gr.update(value=f"## Point number {section_labels[evt.index]}:"),
-            gr.update(value=coords[evt.index][0]),
-            gr.update(value=coords[evt.index][1])
+        file_input.change(
+            fn=show_image,
+            inputs=file_input,
+            outputs=[file_input, coords_state, filename, filename_buttons_row, output_image, image_coords_row,
+                     all_coords]
         )
 
 
-    output_image.select(select_section, [coords_state], [md_text, selected_section_x, selected_section_y])
+        def select_section(evt: gr.SelectData, coords):
+            return (
+                gr.update(value=f"## Point number {section_labels[evt.index]}:"),
+                gr.update(value=coords[evt.index][0]),
+                gr.update(value=coords[evt.index][1])
+            )
+
+
+        output_image.select(select_section, [coords_state], [md_text, selected_section_x, selected_section_y])
+        edit_button.click(fn=lambda: gr.update(value="This option does not work yet"), inputs=None, outputs=edit_button)
+        download_button.click(
+            fn=lambda: gr.update(value="This option does not work yet"),
+            inputs=None,
+            outputs=download_button
+        )
+
+
+        def reset_ui():
+            return (
+                gr.update(value=None, visible=True),  # file_input visible again
+                None,  # coords_state cleared
+                gr.update(visible=False),  # filename_buttons_row hidden
+                gr.update(visible=False),  # image_coords_row hidden
+                gr.update(visible=False),  # all_coords hidden
+                gr.update(value="### Choose a point to see the coordinates"),   # md_text
+                gr.update(value=None),  # selected_section_x
+                gr.update(value=None),  # selected_section_y
+            )
+
+        next_image_button.click(
+            fn=reset_ui,
+            inputs=None,
+            outputs=[
+                file_input,
+                coords_state,
+                filename_buttons_row,
+                image_coords_row,
+                all_coords,
+                md_text,
+                selected_section_x,
+                selected_section_y
+            ]
+        )
+
+    with gr.Tab("Many images") as many_images:
+        gr.Markdown("# Does not work yet")
 
 if __name__ == "__main__":
     demo.launch()
