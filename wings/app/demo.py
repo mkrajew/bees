@@ -46,15 +46,21 @@ def ai(filepath):
 def show_image(img_path):
     img_name = img_path.split("/")[-1]
     sections_arr, coords = sections(img_path)
+    df_arr = [(idx + 1, x, y) for idx, (x, y) in enumerate(coords)]
     return (
-        gr.update(visible=False),
-        coords,
-        gr.update(value=img_name),
-        gr.update(visible=True),
-        gr.update(value=(img_path, sections_arr)),
-        gr.update(visible=True),
-        gr.update(visible=True)
+        gr.update(visible=False),  # file_input
+        coords,  # coords_state
+        gr.update(value=img_name),  # filename
+        gr.update(visible=True),  # filename_buttons_row
+        gr.update(value=(img_path, sections_arr)),  # output_image
+        gr.update(visible=True),  # image_coords_row
+        gr.update(visible=True),  # all_coords
+        gr.update(value=df_arr),  # coords_df
     )
+
+
+def update_all_coords(coords):
+    pass
 
 
 def sections(img_path):
@@ -86,7 +92,7 @@ def sections(img_path):
 
 
 with gr.Blocks() as demo:
-    gr.Markdown("# Greeting for all the bees!")
+    gr.Markdown("# Greetings to all the bees!")
     with gr.Tab("Single image") as single_image:
         coords_state = gr.State()
 
@@ -100,25 +106,42 @@ with gr.Blocks() as demo:
             output_image = gr.AnnotatedImage(color_map=label_colors, scale=4, height=500)
             with gr.Column(scale=1) as chosen:
                 md_text = gr.Markdown(value="### Choose a point to see the coordinates")
-                selected_section_x = gr.Textbox(label="X Coordinate:", max_lines=1, scale=2)
-                selected_section_y = gr.Textbox(label="Y Coordinate:", max_lines=1, scale=2)
+                selected_section_x = gr.Number(
+                    label="X Coordinate:",
+                    value=None,
+                    placeholder="x",
+                    scale=2,
+                    interactive=False
+                )
+                selected_section_y = gr.Number(
+                    label="Y Coordinate:",
+                    value=None,
+                    placeholder="y",
+                    scale=2,
+                    interactive=False
+                )
                 edit_button = gr.Button(value="Edit", scale=1)
+
         with gr.Accordion(visible=False, label="See all coordinates", open=False) as all_coords:
-            gr.Markdown("Hello there")
+            coords_df = gr.Matrix(
+                headers=["Point", "X", "Y"],
+                datatype="number",
+                column_widths=["10%", "20%", "20%"]
+            )
 
         file_input.change(
             fn=show_image,
             inputs=file_input,
             outputs=[file_input, coords_state, filename, filename_buttons_row, output_image, image_coords_row,
-                     all_coords]
+                     all_coords, coords_df]
         )
 
 
         def select_section(evt: gr.SelectData, coords):
             return (
                 gr.update(value=f"## Point number {section_labels[evt.index]}:"),
-                gr.update(value=coords[evt.index][0]),
-                gr.update(value=coords[evt.index][1])
+                gr.update(value=coords[evt.index][0], interactive=True),
+                gr.update(value=coords[evt.index][1], interactive=True)
             )
 
 
@@ -138,10 +161,11 @@ with gr.Blocks() as demo:
                 gr.update(visible=False),  # filename_buttons_row hidden
                 gr.update(visible=False),  # image_coords_row hidden
                 gr.update(visible=False),  # all_coords hidden
-                gr.update(value="### Choose a point to see the coordinates"),   # md_text
-                gr.update(value=None),  # selected_section_x
-                gr.update(value=None),  # selected_section_y
+                gr.update(value="### Choose a point to see the coordinates"),  # md_text
+                gr.update(value=None, interactive=False),  # selected_section_x
+                gr.update(value=None, interactive=False),  # selected_section_y
             )
+
 
         next_image_button.click(
             fn=reset_ui,
