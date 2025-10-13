@@ -45,10 +45,12 @@ def ai(filepath):
 
 def show_image(img_path):
     img_name = img_path.split("/")[-1]
+    sections_arr, coords = sections(img_path)
     return (
         gr.update(visible=False),
+        coords,
         gr.update(value=img_name, visible=True),
-        gr.update(value=sections(img_path)),
+        gr.update(value=(img_path, sections_arr)),
         gr.update(visible=True)
     )
 
@@ -78,7 +80,7 @@ def sections(img_path):
 
         sections_arr.append((combined_mask, section_labels[idx]))
 
-    return img_path, sections_arr
+    return sections_arr, coords
 
 
 with gr.Blocks() as demo:
@@ -95,18 +97,18 @@ with gr.Blocks() as demo:
             selected_section_y = gr.Textbox(label="Y Coordinate:", max_lines=1, scale=2)
             edit_button = gr.Button(value="Edit", scale=1)
 
-    file_input.change(fn=show_image, inputs=file_input, outputs=[file_input, filename, output_image, image_coords_row])
+    file_input.change(fn=show_image, inputs=file_input, outputs=[file_input, coords_state, filename, output_image, image_coords_row])
 
 
-    def select_section(evt: gr.SelectData):
+    def select_section(evt: gr.SelectData, coords):
         return (
             gr.update(value=f"## Point number {section_labels[evt.index]}:"),
-            gr.update(value=random.randint(1, 200)),
-            gr.update(value=random.randint(1, 200))
+            gr.update(value=coords[evt.index][0]),
+            gr.update(value=coords[evt.index][1])
         )
 
 
-    output_image.select(select_section, None, [md_text, selected_section_x, selected_section_y])
+    output_image.select(select_section, [coords_state], [md_text, selected_section_x, selected_section_y])
 
 if __name__ == "__main__":
     demo.launch()
