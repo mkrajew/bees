@@ -64,6 +64,7 @@ def visualize_coords(
         *,
         filename: str | None = None,
         spot_size: int = 6,
+        color = (0, 255, 0),
         show: bool = True,
         save_path: Path | str | None = None
 ) -> np.ndarray:
@@ -75,6 +76,7 @@ def visualize_coords(
         targets: A 1D tensor of alternating x and y coordinates.
         filename: Optional title used when displaying the image.
         spot_size: Radius of the circle drawn at each coordinate point.
+        color: Color for the spot circles.
         show: If True, displays the image using matplotlib.
         save_path: If provided, saves the annotated image to this path.
     """
@@ -85,7 +87,7 @@ def visualize_coords(
 
     for x, y in zip(x_coords, y_coords):
         x, y = int(x), int(y)
-        cv2.circle(img, (x, y), spot_size, (0, 255, 0), -1)
+        cv2.circle(img, (x, y), spot_size, color, -1)
 
     if show:
         plt_imshow(img, filename)
