@@ -1,0 +1,235 @@
+import random
+from pathlib import Path
+
+import cv2
+import gradio as gr
+import numpy as np
+import torch
+
+from wings.config import MODELS_DIR, PROCESSED_DATA_DIR
+from wings.gpa import recover_order
+from wings.modeling.litnet import LitNet
+from wings.modeling.loss import DiceLoss
+from wings.utils import load_image
+from wings.visualizing.image_preprocess import unet_fit_rectangle_preprocess, final_coords
+from wings.visualizing.visualize import visualize_coords
+
+section_labels = [str(i) for i in range(1, 20)]
+red_label_colors = {
+    "1": "#FF00FF",
+    "2": "#FF00E6",
+    "3": "#FF00CC",
+    "4": "#FF00B3",
+    "5": "#FF0099",
+    "6": "#FF0080",
+    "7": "#FF0066",
+    "8": "#FF004D",
+    "9": "#FF0033",
+    "10": "#FF0019",
+    "11": "#FF0000",
+    "12": "#FF1A00",
+    "13": "#FF3300",
+    "14": "#FF4D00",
+    "15": "#FF6600",
+    "16": "#FF8000",
+    "17": "#FF9900",
+    "18": "#FFB300",
+    "19": "#FFCC00"
+}
+green_label_colors = {
+    "1": "#009933",
+    "2": "#00A42D",
+    "3": "#00AF27",
+    "4": "#00BB22",
+    "5": "#00C61C",
+    "6": "#00D116",
+    "7": "#00DD11",
+    "8": "#00E80B",
+    "9": "#00F305",
+    "10": "#00FF00",
+    "11": "#0BFF00",
+    "12": "#16FF00",
+    "13": "#22FF00",
+    "14": "#2DFF00",
+    "15": "#38FF00",
+    "16": "#44FF00",
+    "17": "#4FFF00",
+    "18": "#5AFF00",
+    "19": "#66FF00"
+}
+
+
+countries = ['AT', 'GR', 'HR', 'HU', 'MD', 'PL', 'RO', 'SI']
+checkpoint_path = MODELS_DIR / 'unet-rectangle-epoch=08-val_loss=0.14-unet-training-rectangle_1.ckpt'
+unet_model = torch.hub.load(
+    'mateuszbuda/brain-segmentation-pytorch', 'unet',
+    in_channels=3, out_channels=1, init_features=32, pretrained=False
+)
+num_epochs = 60
+model = LitNet.load_from_checkpoint(checkpoint_path, model=unet_model, num_epochs=num_epochs, criterion=DiceLoss())
+model.eval()
+
+mean_coords = torch.load(
+    PROCESSED_DATA_DIR / "mask_datasets" / 'rectangle' / "mean_shape.pth", weights_only=False
+)
+def ai(height, width):
+    num_points = 19
+    coordinates = []
+    for _ in range(num_points):
+        x = random.randint(0, width - 1)
+        y = random.randint(0, height - 1)
+        coordinates.append((x, y))
+
+    return torch.tensor(coordinates)
+
+
+def update_submit_button_value(filepaths):
+    if filepaths:
+        filepaths = list(dict.fromkeys(filepaths))
+        files_num = len(filepaths)
+        if files_num == 1:
+            return gr.update(value="Submit 1 file")
+        elif files_num > 1:
+            return gr.update(value=f"Submit {files_num} files")
+
+    return gr.update(value=f"Submit")
+
+
+def input_images(filepaths):
+    return (
+        gr.update(visible=False),  # entry_page
+        filepaths,  # image_paths
+        gr.update(visible=True),  # image_page
+    )
+
+
+def sections(coords, img_sizes):
+    sections_arr = []
+    W, H = img_sizes
+    Y, X = np.ogrid[:H, :W]
+    r = 3
+    R = 9
+
+    for idx, (x, y) in enumerate(coords):
+        y_img = H - y - 1
+        mask_small = ((X - x) ** 2 + (Y - y_img) ** 2) < r ** 2
+        mask_small = mask_small.astype(float)
+
+        mask_large = ((X - x) ** 2 + (Y - y_img) ** 2) < R ** 2
+        mask_large = mask_large.astype(float)
+        mask_large[mask_small > 0] = 0
+        mask_large *= 0.3
+
+        combined_mask = mask_small + mask_large
+
+        sections_arr.append((combined_mask, section_labels[idx]))
+
+    return sections_arr
+
+
+def update_output_image(filepaths, idx, coordinates, sizes):
+    img_path = filepaths[idx]
+    filename = Path(img_path).name
+    img_size = sizes[idx]
+    sections_arr = sections(coordinates[idx].cpu().numpy(), img_size)
+
+    img = cv2.imread(img_path, cv2.IMREAD_COLOR)
+    img = visualize_coords(img, coordinates[idx].flatten(), spot_size=2)
+
+    return (
+        gr.update(value=(img, sections_arr)),  # output_image
+        gr.update(value=filename),  # filename_textbox
+    )
+
+
+def update_filename(new_filename, filepaths, idx):
+    filepaths[idx] = new_filename
+    return filepaths
+
+
+def calculate_coords(filepaths):
+    coordinates = []
+    image_sizes = []
+    for img_path in filepaths:
+        image_tensor, x_size, y_size = load_image(img_path, unet_fit_rectangle_preprocess)
+        image_sizes.append((x_size, y_size))
+
+        output = model(image_tensor.cuda().unsqueeze(0))
+        mask = torch.round(output).squeeze().detach().cpu().numpy()
+
+        mask_coords = final_coords(mask, x_size, y_size)
+        reordered = recover_order(mean_coords, torch.tensor(mask_coords))
+        coordinates.append(reordered)
+
+    return coordinates, image_sizes
+
+
+def select_coordinate(evt: gr.SelectData):
+    pass
+
+
+with gr.Blocks() as demo:
+    gr.Markdown("# Bee-wing coordinates marker test")
+    with gr.Column() as entry_page:
+        files_input = gr.File(
+            file_types=['image'],
+            file_count='multiple',
+            label="Upload bee-wing images",
+            height=500,
+        )
+        submit_button = gr.Button("Submit")
+
+    image_paths = gr.State()
+    image_idx = gr.State(0)
+    image_coords = gr.State()
+    images_sizes = gr.State()
+
+    with gr.Column(visible=False) as image_page:
+        with gr.Column() as image_column:
+            with gr.Row() as image_row:
+                with gr.Column(scale=4) as image_slider:
+                    output_image = gr.AnnotatedImage(color_map=red_label_colors, height=500)
+                    with gr.Row(equal_height=True):
+                        filename_scale = 10
+                        left_button = gr.Button("<", size="lg", scale=1)
+                        filename_textbox = gr.Textbox(
+                            max_lines=1,
+                            show_label=False,
+                            scale=filename_scale,
+                            interactive=True,
+                        )
+                        right_button = gr.Button(">", size="lg", scale=1)
+                with gr.Column(scale=1) as coordinates_data:
+                    md_text = gr.Markdown(value="## Choose a point to see the coordinates")
+                    selected_section_x = gr.Number()
+                    selected_section_y = gr.Number()
+                    edit_button = gr.Button("Edit")
+
+    files_input.change(
+        fn=update_submit_button_value,
+        inputs=files_input,
+        outputs=submit_button,
+    )
+
+    submit_button.click(
+        fn=input_images,
+        inputs=files_input,
+        outputs=[entry_page, image_paths, image_page],
+    ).then(
+        fn=calculate_coords,
+        inputs=image_paths,
+        outputs=[image_coords, images_sizes],
+    ).then(
+        fn=update_output_image,
+        inputs=[image_paths, image_idx, image_coords, images_sizes],
+        outputs=[output_image, filename_textbox],
+    )
+
+    filename_textbox.submit(
+        fn=update_filename,
+        inputs=[filename_textbox, image_paths, image_idx],
+        outputs=image_paths
+    )
+
+if __name__ == '__main__':
+    demo.launch()
