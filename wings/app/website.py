@@ -1,4 +1,3 @@
-import random
 from pathlib import Path
 
 import cv2
@@ -58,7 +57,6 @@ green_label_colors = {
     "19": "#66FF00"
 }
 
-
 countries = ['AT', 'GR', 'HR', 'HU', 'MD', 'PL', 'RO', 'SI']
 checkpoint_path = MODELS_DIR / 'unet-rectangle-epoch=08-val_loss=0.14-unet-training-rectangle_1.ckpt'
 unet_model = torch.hub.load(
@@ -72,15 +70,6 @@ model.eval()
 mean_coords = torch.load(
     PROCESSED_DATA_DIR / "mask_datasets" / 'rectangle' / "mean_shape.pth", weights_only=False
 )
-def ai(height, width):
-    num_points = 19
-    coordinates = []
-    for _ in range(num_points):
-        x = random.randint(0, width - 1)
-        y = random.randint(0, height - 1)
-        coordinates.append((x, y))
-
-    return torch.tensor(coordinates)
 
 
 def update_submit_button_value(filepaths):
@@ -134,7 +123,7 @@ def update_output_image(filepaths, idx, coordinates, sizes):
     sections_arr = sections(coordinates[idx].cpu().numpy(), img_size)
 
     img = cv2.imread(img_path, cv2.IMREAD_COLOR)
-    img = visualize_coords(img, coordinates[idx].flatten(), spot_size=2)
+    img = visualize_coords(img, coordinates[idx].flatten(), spot_size=2, show=False)
 
     return (
         gr.update(value=(img, sections_arr)),  # output_image
@@ -164,8 +153,22 @@ def calculate_coords(filepaths):
     return coordinates, image_sizes
 
 
-def select_coordinate(evt: gr.SelectData):
+def select_coordinate(evt: gr.SelectData, coords, idx):
+    return (
+        gr.update(value=f"## Point number {section_labels[evt.index]}:"),  # point_description
+        gr.update(value=float(coords[idx][evt.index][0])),  # selected_section_x
+        gr.update(value=float(coords[idx][evt.index][1])),  # selected_section_y
+        gr.update(interactive=True),  # edit_button
+        evt.index,  # selected_coordinate
+    )
+
+
+def update_coordinates(coords, idx, sel_coord):
     pass
+
+
+def right_button_click(filepaths, idx):
+    return (idx+1)%len(filepaths)
 
 
 with gr.Blocks() as demo:
@@ -183,6 +186,7 @@ with gr.Blocks() as demo:
     image_idx = gr.State(0)
     image_coords = gr.State()
     images_sizes = gr.State()
+    selected_coordinate = gr.State()
 
     with gr.Column(visible=False) as image_page:
         with gr.Column() as image_column:
@@ -200,10 +204,24 @@ with gr.Blocks() as demo:
                         )
                         right_button = gr.Button(">", size="lg", scale=1)
                 with gr.Column(scale=1) as coordinates_data:
-                    md_text = gr.Markdown(value="## Choose a point to see the coordinates")
-                    selected_section_x = gr.Number()
-                    selected_section_y = gr.Number()
-                    edit_button = gr.Button("Edit")
+                    point_description = gr.Markdown(value="## Choose a point to see the coordinates")
+                    selected_section_x = gr.Number(
+                        label="X Coordinate:",
+                        value=None,
+                        placeholder="x",
+                        scale=2,
+                        interactive=False,
+                        precision=0
+                    )
+                    selected_section_y = gr.Number(
+                        label="Y Coordinate:",
+                        value=None,
+                        placeholder="y",
+                        scale=2,
+                        interactive=False,
+                        precision=0
+                    )
+                    edit_button = gr.Button("Edit", interactive=False)
 
     files_input.change(
         fn=update_submit_button_value,
@@ -229,6 +247,28 @@ with gr.Blocks() as demo:
         fn=update_filename,
         inputs=[filename_textbox, image_paths, image_idx],
         outputs=image_paths
+    )
+
+    output_image.select(
+        fn=select_coordinate,
+        inputs=[image_coords, image_idx],
+        outputs=[
+            point_description,
+            selected_section_x,
+            selected_section_y,
+            edit_button,
+            selected_coordinate
+        ],
+    )
+
+    right_button.click(
+        fn=right_button_click,
+        inputs=[image_paths, image_idx],
+        outputs=image_idx,
+    ).then(
+        fn=update_output_image,
+        inputs=[image_paths, image_idx, image_coords, images_sizes],
+        outputs=[output_image, filename_textbox],
     )
 
 if __name__ == '__main__':
