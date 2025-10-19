@@ -103,9 +103,9 @@ def recover_order(mean_shape, unordered_shape, max_iter=5, device=torch.device('
         perm = torch.tensor(index, dtype=torch.long, device=device)
         s_perm = shapes_torch[perm]
 
-        r = procrustes_align(s_perm, mean_torch, only_matrix=True).cpu().numpy()
-        s_rot = shapes_temp @ r  # (n,2)
-        cost = cdist(mean_temp, s_rot)
+        r = procrustes_align(s_perm, mean_torch, only_matrix=True)
+        s_rot = shapes_torch @ r  # (n,2)
+        cost = cdist(mean_temp, s_rot.cpu().numpy())
         new_idx = solve_assignment(cost)
 
         if np.array_equal(new_idx, index):
