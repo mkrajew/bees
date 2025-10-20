@@ -4,6 +4,7 @@ import cv2
 import gradio as gr
 import numpy as np
 import torch
+import time
 
 from wings.config import MODELS_DIR, PROCESSED_DATA_DIR
 from wings.gpa import recover_order
@@ -88,7 +89,6 @@ def input_images(filepaths):
     return (
         gr.update(visible=False),  # entry_page
         filepaths,  # image_paths
-        gr.update(visible=True),  # image_page
     )
 
 
@@ -97,7 +97,7 @@ def sections(coords, img_sizes):
     W, H = img_sizes
     Y, X = np.ogrid[:H, :W]
     r = 3
-    R = 9
+    R = 12
 
     for idx, (x, y) in enumerate(coords):
         y_img = H - y - 1
@@ -136,10 +136,10 @@ def update_filename(new_filename, filepaths, idx):
     return filepaths
 
 
-def calculate_coords(filepaths):
+def calculate_coords(filepaths, progress=gr.Progress(track_tqdm=True)):
     coordinates = []
     image_sizes = []
-    for img_path in filepaths:
+    for img_path in progress.tqdm(filepaths, desc="Processing images..."):
         image_tensor, x_size, y_size = load_image(img_path, unet_fit_rectangle_preprocess)
         image_sizes.append((x_size, y_size))
 
@@ -149,8 +149,9 @@ def calculate_coords(filepaths):
         mask_coords = final_coords(mask, x_size, y_size)
         reordered = recover_order(mean_coords, torch.tensor(mask_coords))
         coordinates.append(reordered)
+        time.sleep(1)
 
-    return coordinates, image_sizes
+    return coordinates, image_sizes, gr.update(visible=True)  # image_page
 
 
 def select_coordinate(evt: gr.SelectData):
@@ -158,17 +159,28 @@ def select_coordinate(evt: gr.SelectData):
 
 
 def update_coordinates(coords, idx, sel_coord):
-    print(f"{sel_coord=}")
+    if sel_coord:
+        return (
+            gr.update(value=f"## Point number {section_labels[sel_coord]}:"),  # point_description
+            gr.update(value=int(coords[idx][sel_coord][0])),  # selected_section_x
+            gr.update(value=int(coords[idx][sel_coord][1])),  # selected_section_y
+            gr.update(interactive=True),  # edit_button
+        )
     return (
-        gr.update(value=f"## Point number {section_labels[sel_coord]}:"),  # point_description
-        gr.update(value=int(coords[idx][sel_coord][0])),  # selected_section_x
-        gr.update(value=int(coords[idx][sel_coord][1])),  # selected_section_y
-        gr.update(interactive=True),  # edit_button
+        gr.update(), gr.update(), gr.update(), gr.update()
     )
 
 
 def right_button_click(filepaths, idx):
     return (idx + 1) % len(filepaths)
+
+
+def left_button_click(filepaths, idx):
+    return (idx - 1) % len(filepaths)
+
+
+def update_image_desc_md(filepaths, idx, sizes):
+    return gr.update(value=f"# Image {idx + 1} / {len(filepaths)}\nSize: {sizes[idx][0]} x {sizes[idx][1]}")
 
 
 with gr.Blocks() as demo:
@@ -182,6 +194,7 @@ with gr.Blocks() as demo:
         )
         submit_button = gr.Button("Submit")
 
+
     image_paths = gr.State()
     image_idx = gr.State(0)
     image_coords = gr.State()
@@ -191,19 +204,21 @@ with gr.Blocks() as demo:
     with gr.Column(visible=False) as image_page:
         with gr.Column() as image_column:
             with gr.Row() as image_row:
-                with gr.Column(scale=4) as image_slider:
-                    output_image = gr.AnnotatedImage(color_map=red_label_colors, height=500)
+                with gr.Column(scale=5) as image_slider:
+                    output_image = gr.AnnotatedImage(color_map=green_label_colors, height=500, show_label=False)
                     with gr.Row(equal_height=True):
                         filename_scale = 10
-                        left_button = gr.Button("<", size="lg", scale=1)
+                        left_button = gr.Button(value="<", size="lg", scale=2)
                         filename_textbox = gr.Textbox(
                             max_lines=1,
                             show_label=False,
                             scale=filename_scale,
                             interactive=True,
+                            container=False,
                         )
-                        right_button = gr.Button(">", size="lg", scale=1)
+                        right_button = gr.Button(value=">", size="lg", scale=2)
                 with gr.Column(scale=1) as coordinates_data:
+                    image_desc_md = gr.Markdown()
                     point_description = gr.Markdown(value="## Choose a point to see the coordinates")
                     selected_section_x = gr.Number(
                         label="X Coordinate:",
@@ -222,6 +237,8 @@ with gr.Blocks() as demo:
                         precision=0
                     )
                     edit_button = gr.Button("Edit", interactive=False)
+        with gr.Accordion(open=False, label="See all files") as files_list:
+            gr.Markdown("# Test")
 
     files_input.change(
         fn=update_submit_button_value,
@@ -232,15 +249,19 @@ with gr.Blocks() as demo:
     submit_button.click(
         fn=input_images,
         inputs=files_input,
-        outputs=[entry_page, image_paths, image_page],
+        outputs=[entry_page, image_paths],
     ).then(
         fn=calculate_coords,
         inputs=image_paths,
-        outputs=[image_coords, images_sizes],
+        outputs=[image_coords, images_sizes, image_page],
     ).then(
         fn=update_output_image,
         inputs=[image_paths, image_idx, image_coords, images_sizes],
         outputs=[output_image, filename_textbox],
+    ).then(
+        fn=update_image_desc_md,
+        inputs=[image_paths, image_idx, images_sizes],
+        outputs=image_desc_md
     )
 
     filename_textbox.submit(
@@ -280,6 +301,33 @@ with gr.Blocks() as demo:
             selected_section_y,
             edit_button,
         ],
+    ).then(
+        fn=update_image_desc_md,
+        inputs=[image_paths, image_idx, images_sizes],
+        outputs=image_desc_md
+    )
+
+    left_button.click(
+        fn=left_button_click,
+        inputs=[image_paths, image_idx],
+        outputs=image_idx,
+    ).then(
+        fn=update_output_image,
+        inputs=[image_paths, image_idx, image_coords, images_sizes],
+        outputs=[output_image, filename_textbox],
+    ).then(
+        fn=update_coordinates,
+        inputs=[image_coords, image_idx, selected_coordinate],
+        outputs=[
+            point_description,
+            selected_section_x,
+            selected_section_y,
+            edit_button,
+        ],
+    ).then(
+        fn=update_image_desc_md,
+        inputs=[image_paths, image_idx, images_sizes],
+        outputs=image_desc_md
     )
 
 if __name__ == '__main__':
