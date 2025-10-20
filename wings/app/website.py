@@ -153,22 +153,22 @@ def calculate_coords(filepaths):
     return coordinates, image_sizes
 
 
-def select_coordinate(evt: gr.SelectData, coords, idx):
-    return (
-        gr.update(value=f"## Point number {section_labels[evt.index]}:"),  # point_description
-        gr.update(value=float(coords[idx][evt.index][0])),  # selected_section_x
-        gr.update(value=float(coords[idx][evt.index][1])),  # selected_section_y
-        gr.update(interactive=True),  # edit_button
-        evt.index,  # selected_coordinate
-    )
+def select_coordinate(evt: gr.SelectData):
+    return evt.index  # selected_coordinate
 
 
 def update_coordinates(coords, idx, sel_coord):
-    pass
+    print(f"{sel_coord=}")
+    return (
+        gr.update(value=f"## Point number {section_labels[sel_coord]}:"),  # point_description
+        gr.update(value=int(coords[idx][sel_coord][0])),  # selected_section_x
+        gr.update(value=int(coords[idx][sel_coord][1])),  # selected_section_y
+        gr.update(interactive=True),  # edit_button
+    )
 
 
 def right_button_click(filepaths, idx):
-    return (idx+1)%len(filepaths)
+    return (idx + 1) % len(filepaths)
 
 
 with gr.Blocks() as demo:
@@ -251,13 +251,15 @@ with gr.Blocks() as demo:
 
     output_image.select(
         fn=select_coordinate,
-        inputs=[image_coords, image_idx],
+        outputs=selected_coordinate
+    ).then(
+        fn=update_coordinates,
+        inputs=[image_coords, image_idx, selected_coordinate],
         outputs=[
             point_description,
             selected_section_x,
             selected_section_y,
             edit_button,
-            selected_coordinate
         ],
     )
 
@@ -269,6 +271,15 @@ with gr.Blocks() as demo:
         fn=update_output_image,
         inputs=[image_paths, image_idx, image_coords, images_sizes],
         outputs=[output_image, filename_textbox],
+    ).then(
+        fn=update_coordinates,
+        inputs=[image_coords, image_idx, selected_coordinate],
+        outputs=[
+            point_description,
+            selected_section_x,
+            selected_section_y,
+            edit_button,
+        ],
     )
 
 if __name__ == '__main__':
