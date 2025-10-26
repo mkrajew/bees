@@ -4,7 +4,6 @@ import cv2
 import gradio as gr
 import numpy as np
 import torch
-import time
 
 from wings.config import MODELS_DIR, PROCESSED_DATA_DIR
 from wings.gpa import recover_order
@@ -36,7 +35,7 @@ red_label_colors = {
     "18": "#FFB300",
     "19": "#FFCC00"
 }
-green_label_colors = {
+green_label_colors_orig = {
     "1": "#009933",
     "2": "#00A42D",
     "3": "#00AF27",
@@ -57,6 +56,8 @@ green_label_colors = {
     "18": "#5AFF00",
     "19": "#66FF00"
 }
+green_label_colors = green_label_colors_orig.copy()
+red_color_str = "#FF0000"
 
 countries = ['AT', 'GR', 'HR', 'HU', 'MD', 'PL', 'RO', 'SI']
 checkpoint_path = MODELS_DIR / 'unet-rectangle-epoch=08-val_loss=0.14-unet-training-rectangle_1.ckpt'
@@ -126,13 +127,14 @@ def update_output_image(filepaths, idx, coordinates, sizes):
     img = visualize_coords(img, coordinates[idx].flatten(), spot_size=2, show=False)
 
     return (
-        gr.update(value=(img, sections_arr)),  # output_image
+        gr.update(value=(img, sections_arr), color_map=green_label_colors),  # output_image
         gr.update(value=filename),  # filename_textbox
     )
 
 
 def update_filename(new_filename, filepaths, idx):
     filepaths[idx] = new_filename
+    # TODO: to zmienia cala sciezke, niech zmieni sie tylko nazwa
     return filepaths
 
 
@@ -140,6 +142,7 @@ def calculate_coords(filepaths, progress=gr.Progress(track_tqdm=True)):
     coordinates = []
     image_sizes = []
     for img_path in progress.tqdm(filepaths, desc="Processing images..."):
+        # TODO: progress bar
         image_tensor, x_size, y_size = load_image(img_path, unet_fit_rectangle_preprocess)
         image_sizes.append((x_size, y_size))
 
@@ -149,12 +152,14 @@ def calculate_coords(filepaths, progress=gr.Progress(track_tqdm=True)):
         mask_coords = final_coords(mask, x_size, y_size)
         reordered = recover_order(mean_coords, torch.tensor(mask_coords))
         coordinates.append(reordered)
-        time.sleep(1)
 
     return coordinates, image_sizes, gr.update(visible=True)  # image_page
 
 
 def select_coordinate(evt: gr.SelectData):
+    global green_label_colors
+    green_label_colors = green_label_colors_orig.copy()
+    green_label_colors[f"{evt.index+1}"] = red_color_str
     return evt.index  # selected_coordinate
 
 
@@ -183,8 +188,18 @@ def update_image_desc_md(filepaths, idx, sizes):
     return gr.update(value=f"# Image {idx + 1} / {len(filepaths)}\nSize: {sizes[idx][0]} x {sizes[idx][1]}")
 
 
+def update_dataframe(filepaths, coords):
+    rows = []
+    for path, coord_set in zip(filepaths, coords):
+        filename = Path(path).name
+        row = [filename] + [[int(x), int(y)] for x, y in coord_set]
+        rows.append(row)
+    return gr.update(value=rows)
+
+
 with gr.Blocks() as demo:
-    gr.Markdown("# Bee-wing coordinates marker test")
+    gr.Markdown("# WingAI")
+    gr.Markdown("Automated Landmark Detection for Bee Wing Morphometrics")
     with gr.Column() as entry_page:
         files_input = gr.File(
             file_types=['image'],
@@ -193,7 +208,6 @@ with gr.Blocks() as demo:
             height=500,
         )
         submit_button = gr.Button("Submit")
-
 
     image_paths = gr.State()
     image_idx = gr.State(0)
@@ -218,7 +232,13 @@ with gr.Blocks() as demo:
                         )
                         right_button = gr.Button(value=">", size="lg", scale=2)
                 with gr.Column(scale=1) as coordinates_data:
-                    image_desc_md = gr.Markdown()
+                    with gr.Row():
+                        image_desc_md = gr.Markdown()
+                        add_images_button = gr.UploadButton(
+                            label="Add Images",
+                            file_types=['image'],
+                            file_count='multiple'
+                        )
                     point_description = gr.Markdown(value="## Choose a point to see the coordinates")
                     selected_section_x = gr.Number(
                         label="X Coordinate:",
@@ -238,7 +258,9 @@ with gr.Blocks() as demo:
                     )
                     edit_button = gr.Button("Edit", interactive=False)
         with gr.Accordion(open=False, label="See all files") as files_list:
-            gr.Markdown("# Test")
+            headers = [f"p{i}" for i in range(1, 20)]
+            headers.insert(0, "File")
+            df = gr.Dataframe(headers=headers, show_fullscreen_button=True)
 
     files_input.change(
         fn=update_submit_button_value,
@@ -262,12 +284,20 @@ with gr.Blocks() as demo:
         fn=update_image_desc_md,
         inputs=[image_paths, image_idx, images_sizes],
         outputs=image_desc_md
+    ).then(
+        fn=update_dataframe,
+        inputs=[image_paths, image_coords],
+        outputs=df,
     )
 
     filename_textbox.submit(
         fn=update_filename,
         inputs=[filename_textbox, image_paths, image_idx],
         outputs=image_paths
+    ).then(
+        fn=update_dataframe,
+        inputs=[image_paths, image_coords],
+        outputs=df,
     )
 
     output_image.select(
@@ -282,6 +312,10 @@ with gr.Blocks() as demo:
             selected_section_y,
             edit_button,
         ],
+    ).then(
+        fn=update_output_image,
+        inputs=[image_paths, image_idx, image_coords, images_sizes],
+        outputs=[output_image, filename_textbox],
     )
 
     right_button.click(
