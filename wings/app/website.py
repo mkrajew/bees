@@ -3,6 +3,7 @@ from pathlib import Path
 import cv2
 import gradio as gr
 import numpy as np
+import pandas as pd
 import torch
 
 from wings.config import MODELS_DIR, PROCESSED_DATA_DIR
@@ -90,6 +91,7 @@ def input_images(filepaths):
     return (
         gr.update(visible=False),  # entry_page
         filepaths,  # image_paths
+        gr.update(visible=True),  # image_page
     )
 
 
@@ -142,7 +144,6 @@ def calculate_coords(filepaths, progress=gr.Progress(track_tqdm=True)):
     coordinates = []
     image_sizes = []
     for img_path in progress.tqdm(filepaths, desc="Processing images..."):
-        # TODO: progress bar
         image_tensor, x_size, y_size = load_image(img_path, unet_fit_rectangle_preprocess)
         image_sizes.append((x_size, y_size))
 
@@ -153,13 +154,13 @@ def calculate_coords(filepaths, progress=gr.Progress(track_tqdm=True)):
         reordered = recover_order(mean_coords, torch.tensor(mask_coords))
         coordinates.append(reordered)
 
-    return coordinates, image_sizes, gr.update(visible=True)  # image_page
+    return coordinates, image_sizes
 
 
 def select_coordinate(evt: gr.SelectData):
     global green_label_colors
     green_label_colors = green_label_colors_orig.copy()
-    green_label_colors[f"{evt.index+1}"] = red_color_str
+    green_label_colors[f"{evt.index + 1}"] = red_color_str
     return evt.index  # selected_coordinate
 
 
@@ -189,17 +190,52 @@ def update_image_desc_md(filepaths, idx, sizes):
 
 
 def update_dataframe(filepaths, coords):
+    # rows = []
+    # for path, coord_set in zip(filepaths, coords):
+    #     filename = Path(path).name
+    #     row = [filename] + [[int(x), int(y)] for x, y in coord_set]
+    #     rows.append(row)
+    # return gr.update(value=rows)
+    #
+
+    columns = ["file"]
+    for i in range(1, 20):
+        columns.append(f"x{i}")
+        columns.append(f"y{i}")
+
+    rows = []
+
+    for path, coord_set in zip(filepaths, coords):
+        filename = Path(path).name
+        flattened_coords = []
+        for x, y in coord_set:
+            flattened_coords.extend([int(x), int(y)])
+
+        row = [filename] + flattened_coords
+        rows.append(row)
+
+    df_coords = pd.DataFrame(rows, columns=columns)
+
+    return df_coords
+
+
+def generate_data(options, filepaths, coords):
     rows = []
     for path, coord_set in zip(filepaths, coords):
         filename = Path(path).name
         row = [filename] + [[int(x), int(y)] for x, y in coord_set]
         rows.append(row)
-    return gr.update(value=rows)
+
+    df = pd.DataFrame(rows)
+    file_path = "landmarks.csv"
+    df.to_csv(file_path, index=False)
+    return gr.update(value=file_path, interactive=True)
 
 
 with gr.Blocks() as demo:
     gr.Markdown("# WingAI")
     gr.Markdown("Automated Landmark Detection for Bee Wing Morphometrics")
+
     with gr.Column() as entry_page:
         files_input = gr.File(
             file_types=['image'],
@@ -214,53 +250,62 @@ with gr.Blocks() as demo:
     image_coords = gr.State()
     images_sizes = gr.State()
     selected_coordinate = gr.State()
+    all_coords_df = gr.State(pd.DataFrame())
+
 
     with gr.Column(visible=False) as image_page:
-        with gr.Column() as image_column:
-            with gr.Row() as image_row:
-                with gr.Column(scale=5) as image_slider:
-                    output_image = gr.AnnotatedImage(color_map=green_label_colors, height=500, show_label=False)
-                    with gr.Row(equal_height=True):
-                        filename_scale = 10
-                        left_button = gr.Button(value="<", size="lg", scale=2)
-                        filename_textbox = gr.Textbox(
-                            max_lines=1,
-                            show_label=False,
-                            scale=filename_scale,
-                            interactive=True,
-                            container=False,
-                        )
-                        right_button = gr.Button(value=">", size="lg", scale=2)
-                with gr.Column(scale=1) as coordinates_data:
-                    with gr.Row():
-                        image_desc_md = gr.Markdown()
-                        add_images_button = gr.UploadButton(
-                            label="Add Images",
-                            file_types=['image'],
-                            file_count='multiple'
-                        )
-                    point_description = gr.Markdown(value="## Choose a point to see the coordinates")
-                    selected_section_x = gr.Number(
-                        label="X Coordinate:",
-                        value=None,
-                        placeholder="x",
-                        scale=2,
-                        interactive=False,
-                        precision=0
+        with gr.Row(equal_height=True):
+            generate_data_button = gr.Button("Generate Data")
+            download_type = gr.Radio(
+                choices=["Images", "CSV", "Both"],
+                label="Choose where to save landmarks",
+                container=True,
+                show_label=True,
+                interactive=True
+            )
+            download_button = gr.DownloadButton(label="Download Data", interactive=False)
+        with gr.Row() as image_row:
+            with gr.Column(scale=5) as image_viewer:
+                output_image = gr.AnnotatedImage(color_map=green_label_colors, height=500, show_label=False)
+                with gr.Row(equal_height=True):
+                    filename_scale = 10
+                    left_button = gr.Button(value="<", size="lg", scale=2)
+                    filename_textbox = gr.Textbox(
+                        max_lines=1,
+                        show_label=False,
+                        scale=filename_scale,
+                        interactive=True,
+                        container=False,
                     )
-                    selected_section_y = gr.Number(
-                        label="Y Coordinate:",
-                        value=None,
-                        placeholder="y",
-                        scale=2,
-                        interactive=False,
-                        precision=0
+                    right_button = gr.Button(value=">", size="lg", scale=2)
+            with gr.Column(scale=1) as coordinates_data:
+                with gr.Row():
+                    image_desc_md = gr.Markdown()
+                    add_images_button = gr.UploadButton(
+                        label="Add Images",
+                        file_types=['image'],
+                        file_count='multiple'
                     )
-                    edit_button = gr.Button("Edit", interactive=False)
+                point_description = gr.Markdown(value="## Choose a point to see the coordinates")
+                selected_section_x = gr.Number(
+                    label="X Coordinate:",
+                    value=None,
+                    placeholder="x",
+                    scale=2,
+                    interactive=False,
+                    precision=0
+                )
+                selected_section_y = gr.Number(
+                    label="Y Coordinate:",
+                    value=None,
+                    placeholder="y",
+                    scale=2,
+                    interactive=False,
+                    precision=0
+                )
+                edit_button = gr.Button("Edit", interactive=False)
         with gr.Accordion(open=False, label="See all files") as files_list:
-            headers = [f"p{i}" for i in range(1, 20)]
-            headers.insert(0, "File")
-            df = gr.Dataframe(headers=headers, show_fullscreen_button=True)
+            df = gr.Dataframe()
 
     files_input.change(
         fn=update_submit_button_value,
@@ -271,11 +316,12 @@ with gr.Blocks() as demo:
     submit_button.click(
         fn=input_images,
         inputs=files_input,
-        outputs=[entry_page, image_paths],
+        outputs=[entry_page, image_paths, image_page],
     ).then(
         fn=calculate_coords,
         inputs=image_paths,
-        outputs=[image_coords, images_sizes, image_page],
+        outputs=[image_coords, images_sizes],
+        show_progress_on=output_image,
     ).then(
         fn=update_output_image,
         inputs=[image_paths, image_idx, image_coords, images_sizes],
@@ -287,6 +333,10 @@ with gr.Blocks() as demo:
     ).then(
         fn=update_dataframe,
         inputs=[image_paths, image_coords],
+        outputs=all_coords_df,
+    ).then(
+        fn=lambda coords : gr.update(value=coords),
+        inputs=all_coords_df,
         outputs=df,
     )
 
@@ -297,6 +347,10 @@ with gr.Blocks() as demo:
     ).then(
         fn=update_dataframe,
         inputs=[image_paths, image_coords],
+        outputs=all_coords_df,
+    ).then(
+        fn=lambda coords : gr.update(value=coords),
+        inputs=all_coords_df,
         outputs=df,
     )
 
@@ -363,6 +417,14 @@ with gr.Blocks() as demo:
         inputs=[image_paths, image_idx, images_sizes],
         outputs=image_desc_md
     )
+
+    generate_data_button.click(
+        fn=generate_data,
+        inputs=[download_type, image_paths, image_coords],
+        outputs=download_button,
+    )
+
+    download_button.click()
 
 if __name__ == '__main__':
     demo.launch()
