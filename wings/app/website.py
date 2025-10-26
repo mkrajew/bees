@@ -5,6 +5,7 @@ import gradio as gr
 import numpy as np
 import pandas as pd
 import torch
+import zipfile
 
 from wings.config import MODELS_DIR, PROCESSED_DATA_DIR
 from wings.gpa import recover_order
@@ -190,14 +191,6 @@ def update_image_desc_md(filepaths, idx, sizes):
 
 
 def update_dataframe(filepaths, coords):
-    # rows = []
-    # for path, coord_set in zip(filepaths, coords):
-    #     filename = Path(path).name
-    #     row = [filename] + [[int(x), int(y)] for x, y in coord_set]
-    #     rows.append(row)
-    # return gr.update(value=rows)
-    #
-
     columns = ["file"]
     for i in range(1, 20):
         columns.append(f"x{i}")
@@ -219,20 +212,25 @@ def update_dataframe(filepaths, coords):
     return df_coords
 
 
-def generate_data(options, filepaths, coords):
-    rows = []
-    for path, coord_set in zip(filepaths, coords):
-        filename = Path(path).name
-        row = [filename] + [[int(x), int(y)] for x, y in coord_set]
-        rows.append(row)
-
-    df = pd.DataFrame(rows)
-    file_path = "landmarks.csv"
-    df.to_csv(file_path, index=False)
+def generate_data(options, filepaths, coords, df_coords):
+    if options == "CSV":
+        file_path = "landmarks.csv"
+        df_coords.to_csv(file_path, index=False)
+    else:
+        file_path = "images.zip" if options == "Images" else "landmarks.zip"
+        with zipfile.ZipFile(file_path, "w") as zip_imgs:
+            for img in filepaths:
+                img_path = Path(img.name)  # Gradio File object
+                zip_imgs.write(img_path, arcname=img_path.name)
+            if options == "Both":
+                csv_path = "landmarks.csv"
+                df_coords.to_csv(csv_path, index=False)
+                zip_imgs.write(csv_path)
     return gr.update(value=file_path, interactive=True)
 
 
-with gr.Blocks() as demo:
+
+with (gr.Blocks() as demo):
     gr.Markdown("# WingAI")
     gr.Markdown("Automated Landmark Detection for Bee Wing Morphometrics")
 
@@ -252,12 +250,12 @@ with gr.Blocks() as demo:
     selected_coordinate = gr.State()
     all_coords_df = gr.State(pd.DataFrame())
 
-
     with gr.Column(visible=False) as image_page:
         with gr.Row(equal_height=True):
             generate_data_button = gr.Button("Generate Data")
             download_type = gr.Radio(
-                choices=["Images", "CSV", "Both"],
+                choices=["CSV", "Images", "Both"],
+                value="CSV",
                 label="Choose where to save landmarks",
                 container=True,
                 show_label=True,
@@ -335,7 +333,7 @@ with gr.Blocks() as demo:
         inputs=[image_paths, image_coords],
         outputs=all_coords_df,
     ).then(
-        fn=lambda coords : gr.update(value=coords),
+        fn=lambda coords: gr.update(value=coords),
         inputs=all_coords_df,
         outputs=df,
     )
@@ -349,7 +347,7 @@ with gr.Blocks() as demo:
         inputs=[image_paths, image_coords],
         outputs=all_coords_df,
     ).then(
-        fn=lambda coords : gr.update(value=coords),
+        fn=lambda coords: gr.update(value=coords),
         inputs=all_coords_df,
         outputs=df,
     )
@@ -420,7 +418,7 @@ with gr.Blocks() as demo:
 
     generate_data_button.click(
         fn=generate_data,
-        inputs=[download_type, image_paths, image_coords],
+        inputs=[download_type, image_paths, image_coords, all_coords_df],
         outputs=download_button,
     )
 
