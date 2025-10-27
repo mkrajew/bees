@@ -277,6 +277,7 @@ def get_edit_coordinates(img, evt: gr.SelectData):
 
 
 def show_edit_point(paths, idx, coords, edit_coord_idx, tmp_coords):
+    # TODO: correct the repetition
     img_path = paths[idx]
     img = cv2.imread(img_path, cv2.IMREAD_COLOR)
     other_coords = torch.cat([coords[idx][:edit_coord_idx], coords[idx][edit_coord_idx + 1:]], dim=0)
@@ -338,11 +339,21 @@ with (gr.Blocks() as demo):
                 show_label=False,
                 interactive=True
             )
-            download_button = gr.DownloadButton(label="Download Data", interactive=False)
+            download_button = gr.DownloadButton(label="Download Data", interactive=False, variant='primary')
         with gr.Row() as image_row:
             with gr.Column(scale=5) as image_viewer:
-                output_image = gr.AnnotatedImage(color_map=green_label_colors, height=500, show_label=False)
-                edit_image = gr.Image(visible=False, interactive=False, show_download_button=False)
+                output_image = gr.AnnotatedImage(
+                    color_map=green_label_colors,
+                    height=500,
+                    show_label=False,
+                    show_fullscreen_button=False
+                )
+                edit_image = gr.Image(
+                    visible=False,
+                    interactive=False,
+                    show_download_button=False,
+                    show_fullscreen_button=False
+                )
                 with gr.Row(equal_height=True):
                     filename_scale = 10
                     left_button = gr.Button(value="<", size="lg", scale=2)
