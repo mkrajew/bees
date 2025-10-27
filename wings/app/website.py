@@ -1,3 +1,4 @@
+import tempfile
 import zipfile
 from pathlib import Path
 
@@ -223,13 +224,19 @@ def update_dataframe(filepaths, coords):
     return df_coords
 
 
-def generate_data(options, filepaths, coords, df_coords, sizes):
+def generate_data(options, filepaths, coords, df_coords, sizes, user_tmp):
+    if user_tmp is None:
+        user_tmp = tempfile.TemporaryDirectory()
+    tmpdir = Path(user_tmp.name)
+
     if options == "CSV":
-        file_path = "landmarks.csv"
-        df_coords.to_csv(file_path, index=False)
+        file_name = "landmarks.csv"
+        filepath = tmpdir / file_name
+        df_coords.to_csv(filepath, index=False)
     else:
-        file_path = "images.zip" if options == "Images" else "landmarks.zip"
-        with zipfile.ZipFile(file_path, "w") as zip_imgs:
+        file_name = "images.zip" if options == "Images" else "landmarks.zip"
+        filepath = tmpdir / file_name
+        with zipfile.ZipFile(filepath, "w") as zip_imgs:
             for img, coords, sizes in zip(filepaths, coords, sizes):
                 img_path = Path(img.name)  # Gradio File object
                 img = Image.open(img_path)
@@ -250,7 +257,7 @@ def generate_data(options, filepaths, coords, df_coords, sizes):
                 csv_path = "landmarks.csv"
                 df_coords.to_csv(csv_path, index=False)
                 zip_imgs.write(csv_path)
-    return gr.update(value=file_path, interactive=True)
+    return gr.update(value=filepath, interactive=True), user_tmp
 
 
 def show_edit_image(paths, idx, coords, edit_coord_idx):
@@ -307,6 +314,13 @@ def confirm_edit_coords(coords, idx, sel_coord_idx, temp):
     return coords, None
 
 
+def clean_temp(user_tmp):
+    if user_tmp is not None:
+        user_tmp.cleanup()
+
+    return None
+
+
 with (gr.Blocks() as demo):
     gr.Markdown("# WingAI")
     gr.Markdown("Automated Landmark Detection for Bee Wing Morphometrics")
@@ -327,6 +341,7 @@ with (gr.Blocks() as demo):
     selected_coordinate = gr.State(None)
     all_coords_df = gr.State(pd.DataFrame())
     tmp_edit_coords = gr.State()
+    temp_dir = gr.State(None)
 
     with gr.Column(visible=False) as image_page:
         with gr.Row(equal_height=True):
@@ -510,11 +525,15 @@ with (gr.Blocks() as demo):
 
     generate_data_button.click(
         fn=generate_data,
-        inputs=[download_type, image_paths, image_coords, all_coords_df, images_sizes],
-        outputs=download_button,
+        inputs=[download_type, image_paths, image_coords, all_coords_df, images_sizes, temp_dir],
+        outputs=[download_button, temp_dir],
     )
 
-    download_button.click()
+    download_button.click(
+        fn=clean_temp,
+        inputs=temp_dir,
+        outputs=temp_dir,
+    )
 
     add_images_button.upload(
         fn=add_images,
