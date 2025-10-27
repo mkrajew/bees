@@ -1,3 +1,4 @@
+import zipfile
 from pathlib import Path
 
 import cv2
@@ -5,8 +6,6 @@ import gradio as gr
 import numpy as np
 import pandas as pd
 import torch
-import zipfile
-
 from PIL import Image, PngImagePlugin
 
 from wings.config import MODELS_DIR, PROCESSED_DATA_DIR
@@ -96,6 +95,16 @@ def input_images(filepaths):
         filepaths,  # image_paths
         gr.update(visible=True),  # image_page
     )
+
+
+def add_images(new_filepaths, old_filepaths, sizes, coords):
+    new_filepaths = [filepath for filepath in new_filepaths if filepath not in old_filepaths]
+    new_coords, new_sizes = calculate_coords(new_filepaths)
+    old_filepaths.extend(new_filepaths)
+    sizes.extend(new_sizes)
+    coords.extend(new_coords)
+
+    return old_filepaths, sizes, coords
 
 
 def sections(coords, img_sizes):
@@ -244,7 +253,6 @@ def generate_data(options, filepaths, coords, df_coords, sizes):
     return gr.update(value=file_path, interactive=True)
 
 
-
 with (gr.Blocks() as demo):
     gr.Markdown("# WingAI")
     gr.Markdown("Automated Landmark Detection for Bee Wing Morphometrics")
@@ -262,7 +270,7 @@ with (gr.Blocks() as demo):
     image_idx = gr.State(0)
     image_coords = gr.State()
     images_sizes = gr.State()
-    selected_coordinate = gr.State()
+    selected_coordinate = gr.State(None)
     all_coords_df = gr.State(pd.DataFrame())
 
     with gr.Column(visible=False) as image_page:
@@ -318,7 +326,7 @@ with (gr.Blocks() as demo):
                 )
                 edit_button = gr.Button("Edit", interactive=False)
         with gr.Accordion(open=False, label="See all files") as files_list:
-            df = gr.Dataframe()
+            df = gr.Dataframe(show_row_numbers=True)
 
     files_input.change(
         fn=update_submit_button_value,
@@ -439,5 +447,24 @@ with (gr.Blocks() as demo):
 
     download_button.click()
 
-if __name__ == '__main__':
-    demo.launch()
+    add_images_button.upload(
+        fn=add_images,
+        inputs=[add_images_button, image_paths, images_sizes, image_coords],
+        outputs=[image_paths, images_sizes, image_coords],
+        show_progress_on=output_image,
+    ).then(
+        fn=update_image_desc_md,
+        inputs=[image_paths, image_idx, images_sizes],
+        outputs=image_desc_md
+    ).then(
+        fn=update_dataframe,
+        inputs=[image_paths, image_coords],
+        outputs=all_coords_df,
+    ).then(
+        fn=lambda coords: gr.update(value=coords),
+        inputs=all_coords_df,
+        outputs=df,
+    )
+
+    if __name__ == '__main__':
+        demo.launch()
