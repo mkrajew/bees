@@ -7,6 +7,8 @@ import pandas as pd
 import torch
 import zipfile
 
+from PIL import Image, PngImagePlugin
+
 from wings.config import MODELS_DIR, PROCESSED_DATA_DIR
 from wings.gpa import recover_order
 from wings.modeling.litnet import LitNet
@@ -166,7 +168,7 @@ def select_coordinate(evt: gr.SelectData):
 
 
 def update_coordinates(coords, idx, sel_coord):
-    if sel_coord:
+    if sel_coord is not None:
         return (
             gr.update(value=f"## Point number {section_labels[sel_coord]}:"),  # point_description
             gr.update(value=int(coords[idx][sel_coord][0])),  # selected_section_x
@@ -212,15 +214,28 @@ def update_dataframe(filepaths, coords):
     return df_coords
 
 
-def generate_data(options, filepaths, coords, df_coords):
+def generate_data(options, filepaths, coords, df_coords, sizes):
     if options == "CSV":
         file_path = "landmarks.csv"
         df_coords.to_csv(file_path, index=False)
     else:
         file_path = "images.zip" if options == "Images" else "landmarks.zip"
         with zipfile.ZipFile(file_path, "w") as zip_imgs:
-            for img in filepaths:
+            for img, coords, sizes in zip(filepaths, coords, sizes):
                 img_path = Path(img.name)  # Gradio File object
+                img = Image.open(img_path)
+                img.load()
+
+                y_size = sizes[1]
+                coords_np = coords.detach().cpu().numpy().copy()
+                coords_np[:, 1] = y_size - coords_np[:, 1] - 1
+                labels_str = " ".join(str(int(x)) for x in coords_np.flatten())
+                meta_str = f"landmarks:{labels_str};"
+                png_info = PngImagePlugin.PngInfo()
+                png_info.add_text("IdentiFly", meta_str)
+
+                # TODO: check path if it has .png extension
+                img.save(img_path, pnginfo=png_info)
                 zip_imgs.write(img_path, arcname=img_path.name)
             if options == "Both":
                 csv_path = "landmarks.csv"
@@ -257,8 +272,8 @@ with (gr.Blocks() as demo):
                 choices=["CSV", "Images", "Both"],
                 value="CSV",
                 label="Choose where to save landmarks",
-                container=True,
-                show_label=True,
+                container=False,
+                show_label=False,
                 interactive=True
             )
             download_button = gr.DownloadButton(label="Download Data", interactive=False)
@@ -418,7 +433,7 @@ with (gr.Blocks() as demo):
 
     generate_data_button.click(
         fn=generate_data,
-        inputs=[download_type, image_paths, image_coords, all_coords_df],
+        inputs=[download_type, image_paths, image_coords, all_coords_df, images_sizes],
         outputs=download_button,
     )
 
