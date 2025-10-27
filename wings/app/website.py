@@ -253,6 +253,59 @@ def generate_data(options, filepaths, coords, df_coords, sizes):
     return gr.update(value=file_path, interactive=True)
 
 
+def show_edit_image(paths, idx, coords, edit_coord_idx):
+    img_path = paths[idx]
+    img = cv2.imread(img_path, cv2.IMREAD_COLOR)
+    other_coords = torch.cat([coords[idx][:edit_coord_idx], coords[idx][edit_coord_idx + 1:]], dim=0)
+    img = visualize_coords(img, other_coords.flatten(), spot_size=2, show=False)
+    img = visualize_coords(img, coords[idx][edit_coord_idx].flatten(), spot_size=2, color=(255, 0, 0), show=False)
+
+    return (
+        gr.update(visible=False),  # output_image
+        gr.update(value=img, visible=True),  # edit_image
+        gr.update(interactive=False),  # left_button
+        gr.update(interactive=False),  # right_button
+        gr.update(visible=True),  # confirm_cancel_buttons
+        gr.update(visible=False),  # edit_button
+    )
+
+
+def get_edit_coordinates(img, evt: gr.SelectData):
+    x = evt.index[0]
+    y = img.shape[0] - 1 - evt.index[1]
+    return x, y
+
+
+def show_edit_point(paths, idx, coords, edit_coord_idx, tmp_coords):
+    img_path = paths[idx]
+    img = cv2.imread(img_path, cv2.IMREAD_COLOR)
+    other_coords = torch.cat([coords[idx][:edit_coord_idx], coords[idx][edit_coord_idx + 1:]], dim=0)
+    img = visualize_coords(img, other_coords.flatten(), spot_size=2, show=False)
+    img = visualize_coords(img, torch.tensor(tmp_coords), spot_size=2, color=(255, 0, 0), show=False)
+
+    return (
+        gr.update(value=img),
+        gr.update(value=tmp_coords[0]),  # selected_section_x
+        gr.update(value=tmp_coords[1]),  # selected_section_y
+    )
+
+
+def cancel_button_click():
+    return (
+        gr.update(visible=False),  # confirm_cancel_buttons
+        gr.update(visible=True),  # edit_button,
+        gr.update(visible=False),  # edit_image,
+        gr.update(visible=True),  # output_image,
+        gr.update(interactive=True),  # left_button
+        gr.update(interactive=True),  # right_button
+    )
+
+
+def confirm_edit_coords(coords, idx, sel_coord_idx, temp):
+    coords[idx][sel_coord_idx] = torch.tensor(temp)
+    return coords, None
+
+
 with (gr.Blocks() as demo):
     gr.Markdown("# WingAI")
     gr.Markdown("Automated Landmark Detection for Bee Wing Morphometrics")
@@ -272,6 +325,7 @@ with (gr.Blocks() as demo):
     images_sizes = gr.State()
     selected_coordinate = gr.State(None)
     all_coords_df = gr.State(pd.DataFrame())
+    tmp_edit_coords = gr.State()
 
     with gr.Column(visible=False) as image_page:
         with gr.Row(equal_height=True):
@@ -288,6 +342,7 @@ with (gr.Blocks() as demo):
         with gr.Row() as image_row:
             with gr.Column(scale=5) as image_viewer:
                 output_image = gr.AnnotatedImage(color_map=green_label_colors, height=500, show_label=False)
+                edit_image = gr.Image(visible=False, interactive=False, show_download_button=False)
                 with gr.Row(equal_height=True):
                     filename_scale = 10
                     left_button = gr.Button(value="<", size="lg", scale=2)
@@ -325,6 +380,9 @@ with (gr.Blocks() as demo):
                     precision=0
                 )
                 edit_button = gr.Button("Edit", interactive=False)
+                with gr.Row(visible=False) as confirm_cancel_buttons:
+                    confirm_button = gr.Button(value="Confirm", interactive=True)
+                    cancel_button = gr.Button(value="Cancel", interactive=True)
         with gr.Accordion(open=False, label="See all files") as files_list:
             df = gr.Dataframe(show_row_numbers=True)
 
@@ -464,6 +522,66 @@ with (gr.Blocks() as demo):
         fn=lambda coords: gr.update(value=coords),
         inputs=all_coords_df,
         outputs=df,
+    )
+
+    edit_button.click(
+        fn=show_edit_image,
+        inputs=[image_paths, image_idx, image_coords, selected_coordinate],
+        outputs=[output_image, edit_image, left_button, right_button, confirm_cancel_buttons, edit_button]
+    )
+
+    edit_image.select(
+        fn=get_edit_coordinates,
+        inputs=[edit_image],
+        outputs=[tmp_edit_coords]
+    ).then(
+        fn=show_edit_point,
+        inputs=[image_paths, image_idx, image_coords, selected_coordinate, tmp_edit_coords],
+        outputs=[edit_image, selected_section_x, selected_section_y]
+    )
+
+    confirm_button.click(
+        fn=confirm_edit_coords,
+        inputs=[image_coords, image_idx, selected_coordinate, tmp_edit_coords],
+        outputs=[image_coords, tmp_edit_coords],
+    ).then(
+        fn=cancel_button_click,
+        outputs=[confirm_cancel_buttons, edit_button, edit_image, output_image, left_button, right_button]
+    ).then(
+        fn=update_output_image,
+        inputs=[image_paths, image_idx, image_coords, images_sizes],
+        outputs=[output_image, filename_textbox],
+    ).then(
+        fn=update_coordinates,
+        inputs=[image_coords, image_idx, selected_coordinate],
+        outputs=[
+            point_description,
+            selected_section_x,
+            selected_section_y,
+            edit_button,
+        ],
+    ).then(
+        fn=update_dataframe,
+        inputs=[image_paths, image_coords],
+        outputs=all_coords_df,
+    ).then(
+        fn=lambda coords: gr.update(value=coords),
+        inputs=all_coords_df,
+        outputs=df,
+    )
+
+    cancel_button.click(
+        fn=cancel_button_click,
+        outputs=[confirm_cancel_buttons, edit_button, edit_image, output_image, left_button, right_button]
+    ).then(
+        fn=update_coordinates,
+        inputs=[image_coords, image_idx, selected_coordinate],
+        outputs=[
+            point_description,
+            selected_section_x,
+            selected_section_y,
+            edit_button,
+        ],
     )
 
     if __name__ == '__main__':
