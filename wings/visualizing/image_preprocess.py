@@ -159,43 +159,7 @@ def fit_rectangle_preprocess(img: torch.Tensor) -> tuple[torch.Tensor, int, int]
     return img, pad_left, pad_bottom
 
 
-def mask_to_coords(mask, max_iter=1):
-    # mask = torch.round(mask).squeeze().detach().cpu().numpy()
-    binary = (mask * 255).astype(np.uint8)
-    _, binary = cv2.threshold(binary, 200, 255, cv2.THRESH_BINARY)
-
-    # Find contours of the white spots
-    contours, _ = cv2.findContours(binary, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-
-    # Get center coordinates of each contour
-    coordinates = []
-    iteration = 1
-    kernel_size = 3
-    kernel = np.ones((kernel_size, kernel_size), np.uint8)
-
-    img_y_size = mask.shape[0]
-
-    while iteration <= max_iter:
-        coordinates = []
-        for cnt in contours:
-            M = cv2.moments(cnt)
-            if M['m00'] != 0:
-                cx = int(M['m10'] / M['m00'])  # x coordinate of centroid
-                cy = int(M['m01'] / M['m00'])  # y coordinate of centroid
-                cy = img_y_size - cy - 1
-                coordinates.append((cx, cy))
-
-        if len(coordinates) == 19:
-            return coordinates
-        binary = cv2.erode(binary, kernel, iterations=1)
-        _, binary = cv2.threshold(binary, 200, 255, cv2.THRESH_BINARY)
-        contours, _ = cv2.findContours(binary, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-        iteration += 1
-
-    raise Exception(f"Found {len(coordinates)} spots in mask.")
-
-
-def mask_to_coords2(mask):
+def mask_to_coords(mask):
     binary = (mask * 255).astype(np.uint8)
     _, binary = cv2.threshold(binary, 200, 255, cv2.THRESH_BINARY)
 
@@ -245,7 +209,7 @@ def unet_reverse_padding(padded_img: torch.Tensor, w_orig: int, h_orig: int) -> 
 
 
 def final_coords(mask, orig_width, orig_height):
-    mask_coords = mask_to_coords2(mask)
+    mask_coords = mask_to_coords(mask)
 
     mask_height, mask_width = mask.shape
 
