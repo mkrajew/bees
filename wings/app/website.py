@@ -10,7 +10,7 @@ import torch
 from PIL import Image, PngImagePlugin
 
 from wings.config import MODELS_DIR, PROCESSED_DATA_DIR
-from wings.gpa import recover_order
+from wings.gpa import handle_coordinates
 from wings.modeling.litnet import LitNet
 from wings.modeling.loss import DiceLoss
 from wings.utils import load_image
@@ -164,7 +164,8 @@ def calculate_coords(filepaths, progress=gr.Progress(track_tqdm=True)):
         mask = torch.round(output).squeeze().detach().cpu().numpy()
 
         mask_coords = final_coords(mask, x_size, y_size)
-        reordered = recover_order(mean_coords, torch.tensor(mask_coords))
+        mask_coords = torch.tensor(mask_coords)
+        reordered = handle_coordinates(mask_coords, mean_coords)
         coordinates.append(reordered)
 
     return coordinates, image_sizes
@@ -327,7 +328,7 @@ with (gr.Blocks() as demo):
 
     with gr.Column() as entry_page:
         files_input = gr.File(
-            file_types=['image'],
+            file_types=['.png'],
             file_count='multiple',
             label="Upload bee-wing images",
             height=500,
@@ -427,7 +428,7 @@ with (gr.Blocks() as demo):
         inputs=image_paths,
         outputs=[image_coords, images_sizes],
         show_progress_on=output_image,
-    ).then(
+    ).success(
         fn=update_output_image,
         inputs=[image_paths, image_idx, image_coords, images_sizes],
         outputs=[output_image, filename_textbox],
