@@ -4,6 +4,7 @@ from pathlib import Path
 
 import gradio as gr
 import pandas as pd
+import torch
 
 from wings.app import model, mean_coords, section_labels, green_label_colors_orig, red_color_str
 from wings.app.images import WingImage
@@ -49,7 +50,7 @@ def add_images(new_filepaths, images, check_idxs, progress=gr.Progress(track_tqd
 
 def update_output_image(images, idx):
     image = images[idx]
-    img = image.image
+    img = image.image.copy()
     img = visualize_coords(img, image.coordinates.flatten(), spot_size=2, show=False)
 
     return (
@@ -145,3 +146,62 @@ def clean_temp(user_tmp):
     if user_tmp is not None:
         user_tmp.cleanup()
     return None, gr.update(interactive=False)
+
+
+def show_edit_image(images, idx, edit_coord_idx):
+    img = images[idx].image.copy()
+    coords = images[idx].coordinates
+    other_coords = torch.cat([coords[:edit_coord_idx], coords[edit_coord_idx + 1:]], dim=0)
+    img = visualize_coords(img, other_coords.flatten(), spot_size=2, show=False)
+    img = visualize_coords(img, coords[edit_coord_idx].flatten(), spot_size=2, color=(255, 0, 0), show=False)
+
+    return (
+        gr.update(visible=False),  # output_image
+        gr.update(value=img, visible=True),  # edit_image
+        gr.update(interactive=False),  # left_button
+        gr.update(interactive=False),  # right_button
+        gr.update(visible=True),  # confirm_cancel_buttons
+        gr.update(visible=False),  # edit_button
+        gr.update(interactive=False),  # add_images_button
+        gr.update(interactive=False),  # generate_button
+    )
+
+
+def cancel_button_click():
+    return (
+        gr.update(visible=False),  # confirm_cancel_buttons
+        gr.update(visible=True),  # edit_button,
+        gr.update(visible=False),  # edit_image,
+        gr.update(visible=True),  # output_image,
+        gr.update(interactive=True),  # left_button
+        gr.update(interactive=True),  # right_button
+        gr.update(interactive=True),  # add_images_button
+        gr.update(interactive=True),  # generate_button
+    )
+
+
+def get_edit_coordinates(img, evt: gr.SelectData):
+    x = evt.index[0]
+    y = img.shape[0] - 1 - evt.index[1]
+    return x, y
+
+
+def confirm_edit_coords(images, idx, sel_coord_idx, temp):
+    coords = images[idx].coordinates
+    coords[sel_coord_idx] = torch.tensor(temp)
+    images[idx].coordinates = coords
+    return images, None
+
+
+def show_edit_point(images, idx, edit_coord_idx, tmp_coords):
+    img = images[idx].image.copy()
+    coords = images[idx].coordinates
+    other_coords = torch.cat([coords[:edit_coord_idx], coords[edit_coord_idx + 1:]], dim=0)
+    img = visualize_coords(img, other_coords.flatten(), spot_size=2, show=False)
+    img = visualize_coords(img, torch.tensor(tmp_coords), spot_size=2, color=(255, 0, 0), show=False)
+
+    return (
+        gr.update(value=img),
+        gr.update(value=tmp_coords[0]),  # selected_section_x
+        gr.update(value=tmp_coords[1]),  # selected_section_y
+    )

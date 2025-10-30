@@ -18,6 +18,7 @@ with gr.Blocks() as demo:
     image_check_idxs = gr.State()
     selected_coordinate = gr.State(None)
     temp_dir = gr.State(None)
+    tmp_edit_coords = gr.State()
 
     with gr.Column(visible=False) as image_page:
         with gr.Row(equal_height=True):
@@ -218,6 +219,89 @@ with gr.Blocks() as demo:
         fn=clean_temp,
         inputs=temp_dir,
         outputs=[temp_dir, download_button],
+    )
+
+    edit_button.click(
+        fn=show_edit_image,
+        inputs=[wing_images, image_idx, selected_coordinate],
+        outputs=[
+            output_image,
+            edit_image,
+            left_button,
+            right_button,
+            confirm_cancel_buttons,
+            edit_button,
+            add_images_button,
+            generate_data_button,
+        ]
+    )
+
+    edit_image.select(
+        fn=get_edit_coordinates,
+        inputs=[edit_image],
+        outputs=[tmp_edit_coords]
+    ).then(
+        fn=show_edit_point,
+        inputs=[wing_images, image_idx, selected_coordinate, tmp_edit_coords],
+        outputs=[edit_image, selected_section_x, selected_section_y]
+    )
+
+    confirm_button.click(
+        fn=confirm_edit_coords,
+        inputs=[wing_images, image_idx, selected_coordinate, tmp_edit_coords],
+        outputs=[wing_images, tmp_edit_coords],
+    ).then(
+        fn=cancel_button_click,
+        outputs=[
+            confirm_cancel_buttons,
+            edit_button,
+            edit_image,
+            output_image,
+            left_button,
+            right_button,
+            add_images_button,
+            generate_data_button,
+        ]
+    ).then(
+        fn=update_output_image,
+        inputs=[wing_images, image_idx],
+        outputs=[output_image, filename_textbox],
+    ).then(
+        fn=update_coordinates,
+        inputs=[wing_images, image_idx, selected_coordinate],
+        outputs=[
+            point_description,
+            selected_section_x,
+            selected_section_y,
+            edit_button,
+        ],
+    ).then(
+        fn=update_dataframe,
+        inputs=wing_images,
+        outputs=df,
+    )
+
+    cancel_button.click(
+        fn=cancel_button_click,
+        outputs=[
+            confirm_cancel_buttons,
+            edit_button,
+            edit_image,
+            output_image,
+            left_button,
+            right_button,
+            add_images_button,
+            generate_data_button,
+        ]
+    ).then(
+        fn=update_coordinates,
+        inputs=[wing_images, image_idx, selected_coordinate],
+        outputs=[
+            point_description,
+            selected_section_x,
+            selected_section_y,
+            edit_button,
+        ],
     )
 
 if __name__ == '__main__':

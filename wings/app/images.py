@@ -15,6 +15,7 @@ class WingImage:
     """ Represents a bee wing image """
 
     def __init__(self, filepath: str, model: torch.nn.Module, mean_coords: torch.tensor, coord_labels):
+        self._coordinates = None
         self._filepath = Path(filepath)
         self.model = model
         self.mean_coords = mean_coords
@@ -70,6 +71,11 @@ class WingImage:
     @property
     def coordinates(self):
         return self._coordinates
+
+    @coordinates.setter
+    def coordinates(self, coords):
+        self._coordinates = coords
+        self._calc_sections()
 
     @property
     def filename(self):
