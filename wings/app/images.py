@@ -1,4 +1,5 @@
 """ Wing Images toolkit for a web application """
+import random
 from pathlib import Path
 
 import cv2
@@ -17,6 +18,7 @@ class WingImage:
     def __init__(self, filepath: str, model: torch.nn.Module, mean_coords: torch.tensor, coord_labels):
         self._coordinates = None
         self._filepath = Path(filepath)
+        self._orig_filepath = Path(filepath)
         self.model = model
         self.mean_coords = mean_coords
         self.coord_labels = coord_labels
@@ -24,7 +26,7 @@ class WingImage:
         self._calc_coordinates()
         self._calc_sections()
 
-        self.image = cv2.imread(str(self._filepath), cv2.IMREAD_COLOR)
+        self._image = cv2.imread(str(self._filepath), cv2.IMREAD_COLOR)
 
     def _calc_coordinates(self):
         """Calculates the coordinates of the bee wing image landmarks"""
@@ -37,7 +39,9 @@ class WingImage:
 
         mask_coords = final_coords(mask, x_size, y_size)
         mask_coords = torch.tensor(mask_coords)
-        self._check_carefully = len(mask_coords) < 19
+        # if random.random() < 0.5:
+        #     mask_coords = mask_coords[:18]
+        self._check_carefully = len(mask_coords) < 19 or len(mask_coords) > 22
         self._coordinates = handle_coordinates(mask_coords, self.mean_coords)
 
     def _calc_sections(self):
@@ -97,7 +101,7 @@ class WingImage:
         return self._filepath == other._filepath
 
     def generate_image_with_meta_landmarks(self):
-        img = Image.open(self._filepath)
+        img = Image.open(self._orig_filepath)
         img.load()
 
         y_size = self.size[1]
@@ -110,3 +114,7 @@ class WingImage:
         img.save(self._filepath, pnginfo=png_info)
 
         return self._filepath
+
+    @property
+    def image(self):
+        return cv2.cvtColor(self._image.copy(), cv2.COLOR_BGR2RGB)

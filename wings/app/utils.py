@@ -31,6 +31,8 @@ def input_images(filepaths, progress=gr.Progress(track_tqdm=True)):
     for idx, filepath in enumerate(progress.tqdm(filepaths, desc="Processing images...")):
         image = WingImage(filepath, model, mean_coords, section_labels)
         images.append(image)
+
+    for idx, image in enumerate(images):
         if image.check_carefully:
             check_idxs.append(idx)
 
@@ -38,19 +40,22 @@ def input_images(filepaths, progress=gr.Progress(track_tqdm=True)):
 
 
 def add_images(new_filepaths, images, check_idxs, progress=gr.Progress(track_tqdm=True)):
+    old_images_num = len(images)
     for idx, filepath in enumerate(progress.tqdm(new_filepaths, desc="Processing images...")):
         image = WingImage(filepath, model, mean_coords, section_labels)
         if image not in images:
             images.append(image)
-            if image.check_carefully:
-                check_idxs.append(idx)
+
+    for idx, image in enumerate(images[old_images_num:], start=old_images_num):
+        if image.check_carefully:
+            check_idxs.append(idx)
 
     return images, check_idxs
 
 
 def update_output_image(images, idx):
     image = images[idx]
-    img = image.image.copy()
+    img = image.image
     img = visualize_coords(img, image.coordinates.flatten(), spot_size=2, show=False)
 
     return (
@@ -109,12 +114,16 @@ def update_coordinates(images, idx, sel_coord):
     )
 
 
-def right_button_click(filepaths, idx):
-    return (idx + 1) % len(filepaths)
+def right_button_click(filepaths, idx, check_images):
+    if idx in check_images:
+        check_images.remove(idx)
+    return (idx + 1) % len(filepaths), check_images
 
 
-def left_button_click(filepaths, idx):
-    return (idx - 1) % len(filepaths)
+def left_button_click(filepaths, idx, check_images):
+    if idx in check_images:
+        check_images.remove(idx)
+    return (idx - 1) % len(filepaths), check_images
 
 
 def generate_data(options, images, user_tmp, progress=gr.Progress(track_tqdm=True)):
@@ -149,7 +158,7 @@ def clean_temp(user_tmp):
 
 
 def show_edit_image(images, idx, edit_coord_idx):
-    img = images[idx].image.copy()
+    img = images[idx].image
     coords = images[idx].coordinates
     other_coords = torch.cat([coords[:edit_coord_idx], coords[edit_coord_idx + 1:]], dim=0)
     img = visualize_coords(img, other_coords.flatten(), spot_size=2, show=False)
@@ -194,7 +203,7 @@ def confirm_edit_coords(images, idx, sel_coord_idx, temp):
 
 
 def show_edit_point(images, idx, edit_coord_idx, tmp_coords):
-    img = images[idx].image.copy()
+    img = images[idx].image
     coords = images[idx].coordinates
     other_coords = torch.cat([coords[:edit_coord_idx], coords[edit_coord_idx + 1:]], dim=0)
     img = visualize_coords(img, other_coords.flatten(), spot_size=2, show=False)
@@ -205,3 +214,32 @@ def show_edit_point(images, idx, edit_coord_idx, tmp_coords):
         gr.update(value=tmp_coords[0]),  # selected_section_x
         gr.update(value=tmp_coords[1]),  # selected_section_y
     )
+
+
+def show_check_images(check_ids):
+    text = generate_check_images_text(check_ids)
+    return gr.update(value=text), gr.update(visible=len(check_ids) > 0)
+
+
+def generate_check_images_text(check_ids):
+    text = ""
+    if len(check_ids) == 1:
+        text = f"### Please carefully check image {check_ids[0] + 1}."
+    elif len(check_ids) >= 1:
+        text = "### Please carefully check images "
+        for check_id in check_ids[:-2]:
+            text += f"{check_id + 1}, "
+        text += f"{check_ids[-2] + 1} and {check_ids[-1] + 1}."
+
+    return text
+
+
+def next_check_image(check_images, idx, images):
+    if idx in check_images:
+        check_images.remove(idx)
+    if len(check_images) > 0:
+        idx = check_images[0]
+    else:
+        idx = (idx + 1) % len(images)
+
+    return check_images, idx
