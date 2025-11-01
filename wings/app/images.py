@@ -30,7 +30,11 @@ class WingImage:
 
     def _calc_coordinates(self):
         """Calculates the coordinates of the bee wing image landmarks"""
-        image_tensor, x_size, y_size = load_image(self._filepath, unet_fit_rectangle_preprocess)
+        try:
+            image_tensor, x_size, y_size = load_image(self._filepath, unet_fit_rectangle_preprocess)
+        except Exception as e:
+            raise LoadImageError(f"Failed to load image from {self.filename}") from e
+
         self.image_tensor = image_tensor
         self._size = (x_size, y_size)
 
@@ -42,7 +46,22 @@ class WingImage:
         # if random.random() < 0.5:
         #     mask_coords = mask_coords[:18]
         self._check_carefully = len(mask_coords) < 19 or len(mask_coords) > 22
-        self._coordinates = handle_coordinates(mask_coords, self.mean_coords)
+
+        try:
+            self._coordinates = handle_coordinates(mask_coords, self.mean_coords)
+        except Exception as e:
+            self._check_carefully = True
+            if len(mask_coords) > 19:
+                mask_coords = mask_coords[:19]
+            elif len(mask_coords) < 19:
+                missing_points = 19 - len(mask_coords)
+                xmin, ymin = 0, 0
+                xmax, ymax = self.size
+                random_x = torch.empty(missing_points).uniform_(xmin, xmax)
+                random_y = torch.empty(missing_points).uniform_(ymin, ymax)
+                random_points = torch.stack([random_x, random_y], dim=1)
+                mask_coords = torch.cat([mask_coords, random_points], dim=0)
+            self._coordinates = mask_coords
 
     def _calc_sections(self):
         """Calculates sections used for displaying gradio AnnotatedImage sections"""
@@ -118,3 +137,8 @@ class WingImage:
     @property
     def image(self):
         return cv2.cvtColor(self._image.copy(), cv2.COLOR_BGR2RGB)
+
+
+class LoadImageError(Exception):
+    """Raised when loading an image fails."""
+    pass

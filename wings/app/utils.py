@@ -1,3 +1,4 @@
+import random
 import tempfile
 import zipfile
 from pathlib import Path
@@ -7,7 +8,8 @@ import pandas as pd
 import torch
 
 from wings.app import model, mean_coords, section_labels, green_label_colors_orig, red_color_str
-from wings.app.images import WingImage
+from wings.app.images import WingImage, LoadImageError
+from wings.config import APP_DIR
 from wings.visualizing.visualize import visualize_coords
 
 green_label_colors = green_label_colors_orig.copy()
@@ -29,8 +31,14 @@ def input_images(filepaths, progress=gr.Progress(track_tqdm=True)):
     images = []
     check_idxs = []
     for idx, filepath in enumerate(progress.tqdm(filepaths, desc="Processing images...")):
-        image = WingImage(filepath, model, mean_coords, section_labels)
-        images.append(image)
+        try:
+            image = WingImage(filepath, model, mean_coords, section_labels)
+            images.append(image)
+        except LoadImageError as e:
+            gr.Warning(str(e))
+
+    if len(images) == 0:
+        raise gr.Error(message="No correct images", print_exception=False)
 
     for idx, image in enumerate(images):
         if image.check_carefully:
@@ -51,6 +59,19 @@ def add_images(new_filepaths, images, check_idxs, progress=gr.Progress(track_tqd
             check_idxs.append(idx)
 
     return images, check_idxs
+
+
+def input_images_failure():
+    image_path = APP_DIR / "bee.png"
+    width, height = 640, 480
+    box_w = random.randint(100, 300)
+    box_h = random.randint(100, 250)
+    x1 = random.randint(0, width - box_w)
+    y1 = random.randint(0, height - box_h)
+    x2 = x1 + box_w
+    y2 = y1 + box_h
+    bbox = (x1, y1, x2, y2)
+    return gr.update(value=(str(image_path), [(bbox, "1")]))
 
 
 def update_output_image(images, idx):

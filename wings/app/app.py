@@ -98,7 +98,7 @@ with gr.Blocks() as demo:
         outputs=submit_button,
     )
 
-    submit_button.click(
+    submit_button_click = submit_button.click(
         fn=lambda: (
             gr.update(visible=False),
             gr.update(visible=True)
@@ -109,7 +109,12 @@ with gr.Blocks() as demo:
         inputs=files_input,
         outputs=[wing_images, image_check_idxs],
         show_progress_on=output_image,
-    ).success(
+    )
+    submit_button_click.failure(
+        fn=input_images_failure,
+        outputs=output_image,
+    )
+    submit_button_click.success(
         fn=update_output_image,
         inputs=[wing_images, image_idx],
         outputs=[output_image, filename_textbox],
