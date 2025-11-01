@@ -50,9 +50,15 @@ def input_images(filepaths, progress=gr.Progress(track_tqdm=True)):
 def add_images(new_filepaths, images, check_idxs, progress=gr.Progress(track_tqdm=True)):
     old_images_num = len(images)
     for idx, filepath in enumerate(progress.tqdm(new_filepaths, desc="Processing images...")):
-        image = WingImage(filepath, model, mean_coords, section_labels)
-        if image not in images:
-            images.append(image)
+        try:
+            image = WingImage(filepath, model, mean_coords, section_labels)
+            if image not in images:
+                images.append(image)
+        except LoadImageError as e:
+            gr.Warning(str(e))
+
+    if len(images) == 0:
+        raise gr.Error(message="No correct images", print_exception=False)
 
     for idx, image in enumerate(images[old_images_num:], start=old_images_num):
         if image.check_carefully:

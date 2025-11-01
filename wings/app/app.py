@@ -1,6 +1,6 @@
 from utils import *
 
-with gr.Blocks() as demo:
+with (gr.Blocks() as demo):
     gr.Markdown("# WingAI")
     gr.Markdown("Automated Landmark Detection for Bee Wing Morphometrics")
 
@@ -214,12 +214,19 @@ with gr.Blocks() as demo:
         outputs=[check_images_info_md, check_images_row],
     )
 
-    add_images_button.upload(
+    add_images_upload = add_images_button.upload(
         fn=add_images,
         inputs=[add_images_button, wing_images, image_check_idxs],
         outputs=[wing_images, image_check_idxs],
         show_progress_on=output_image,
-    ).then(
+    )
+
+    add_images_upload.failure(
+        fn=input_images_failure,
+        outputs=output_image,
+    )
+
+    add_images_upload.success(
         fn=update_image_desc_md,
         inputs=[wing_images, image_idx],
         outputs=image_desc_md
