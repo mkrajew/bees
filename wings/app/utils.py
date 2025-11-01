@@ -270,3 +270,13 @@ def next_check_image(check_images, idx, images):
         idx = (idx + 1) % len(images)
 
     return check_images, idx
+
+
+def reset_app():
+    return (
+        gr.update(visible=True),   # show entry page
+        gr.update(visible=False),  # hide image page
+        gr.update(value=None),  # file_input
+        gr.update(value="Submit"),  # submit_button
+        None, 0, None, None, None, None  # reset all states
+    )

@@ -1,6 +1,6 @@
 from utils import *
 
-with (gr.Blocks() as demo):
+with gr.Blocks() as demo:
     gr.Markdown("# WingAI")
     gr.Markdown("Automated Landmark Detection for Bee Wing Morphometrics")
 
@@ -91,6 +91,7 @@ with (gr.Blocks() as demo):
                 download_button = gr.DownloadButton(label="Download Data", interactive=False, variant='primary')
         with gr.Accordion(open=False, label="See all files") as files_list:
             df = gr.Dataframe(show_row_numbers=True)
+        reset_button = gr.Button(value="Reset", size="sm")
 
     files_input.change(
         fn=update_submit_button_value,
@@ -361,6 +362,23 @@ with (gr.Blocks() as demo):
         fn=show_check_images,
         inputs=image_check_idxs,
         outputs=[check_images_info_md, check_images_row],
+    )
+
+    reset_button.click(
+        fn=reset_app,
+        inputs=[],
+        outputs=[
+            entry_page,
+            image_page,
+            files_input,
+            submit_button,
+            wing_images,
+            image_idx,
+            image_check_idxs,
+            selected_coordinate,
+            temp_dir,
+            tmp_edit_coords
+        ]
     )
 
 if __name__ == '__main__':
