@@ -273,10 +273,15 @@ def next_check_image(check_images, idx, images):
 
 
 def reset_app():
+    global green_label_colors
+    green_label_colors = green_label_colors_orig.copy()
     return (
         gr.update(visible=True),   # show entry page
         gr.update(visible=False),  # hide image page
         gr.update(value=None),  # file_input
         gr.update(value="Submit"),  # submit_button
-        None, 0, None, None, None, None  # reset all states
+        None, 0, None, None, None, None,  # reset all states
+        gr.update(value=None),  # selected_section_x
+        gr.update(value=None),  # selected_section_y
+        gr.update(value="## Choose a point to see the coordinates") # point_description
     )

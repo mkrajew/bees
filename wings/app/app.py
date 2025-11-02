@@ -377,7 +377,10 @@ with gr.Blocks() as demo:
             image_check_idxs,
             selected_coordinate,
             temp_dir,
-            tmp_edit_coords
+            tmp_edit_coords,
+            selected_section_x,
+            selected_section_y,
+            point_description,
         ]
     )
 
