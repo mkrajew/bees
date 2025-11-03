@@ -68,8 +68,8 @@ class WingImage:
         sections_arr = []
         W, H = self._size
         Y, X = np.ogrid[:H, :W]
-        r = 3
-        R = 12
+        r = int(3 / 800 * W)
+        R = int(12 / 800 * W)
 
         for idx, (x, y) in enumerate(self._coordinates.cpu().numpy()):
             y_img = H - y - 1
