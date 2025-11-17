@@ -245,7 +245,7 @@ with gr.Blocks() as demo:
         fn=generate_data,
         inputs=[download_type, wing_images, temp_dir],
         outputs=[download_button, temp_dir],
-        show_progress_on=generate_data_button,
+        show_progress_on=download_type,
     )
 
     download_button.click(
