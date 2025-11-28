@@ -7,7 +7,7 @@ import numpy as np
 import torch
 from PIL import Image, PngImagePlugin
 
-from wings.gpa import handle_coordinates
+from wings.gpa import handle_coordinates, procrustes_align, normalize_shape, center_shape
 from wings.utils import load_image
 from wings.visualizing.image_preprocess import unet_fit_rectangle_preprocess, final_coords
 
@@ -43,8 +43,6 @@ class WingImage:
 
         mask_coords = final_coords(mask, x_size, y_size)
         mask_coords = torch.tensor(mask_coords)
-        # if random.random() < 0.5:
-        #     mask_coords = mask_coords[:18]
         self._check_carefully = len(mask_coords) < 19 or len(mask_coords) > 22
 
         try:
@@ -62,6 +60,11 @@ class WingImage:
                 random_points = torch.stack([random_x, random_y], dim=1)
                 mask_coords = torch.cat([mask_coords, random_points], dim=0)
             self._coordinates = mask_coords
+
+        if not self._check_carefully:
+            gpa = procrustes_align(normalize_shape(center_shape(self._coordinates)), self.mean_coords)
+            gpa_vals = torch.linalg.norm(self.mean_coords- gpa, dim=1)
+            self._check_carefully = gpa_vals.max().item() > 0.04
 
     def _calc_sections(self):
         """Calculates sections used for displaying gradio AnnotatedImage sections"""
