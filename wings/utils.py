@@ -5,7 +5,7 @@ import numpy as np
 import torch
 from scipy.optimize import linear_sum_assignment
 from scipy.spatial.distance import cdist
-from torchvision.io import decode_image
+from torchvision.io import decode_image, ImageReadMode
 
 
 def order_coords(predicted, original):
@@ -40,9 +40,9 @@ def load_image(filepath: Path, preprocess_func: Callable[[torch.Tensor], Any]) -
         The image tensor.
     """
 
-    image = decode_image(str(filepath))
+    image = decode_image(str(filepath), mode=ImageReadMode.RGB, apply_exif_orientation=True)
     x_size, y_size = image.shape[2], image.shape[1]
-    if image.shape[0] == 1:
-        image = image.repeat(3, 1, 1)
+    # if image.shape[0] == 1:
+    #     image = image.repeat(3, 1, 1)
     image, _, _ = preprocess_func(image)
     return image, x_size, y_size

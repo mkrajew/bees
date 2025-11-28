@@ -6,7 +6,7 @@ with gr.Blocks() as demo:
 
     with gr.Column() as entry_page:
         files_input = gr.File(
-            file_types=['.png'],
+            file_types=['.png', '.jpeg', '.gif', '.webp'],
             file_count='multiple',
             label="Upload bee-wing images",
             height=500,
@@ -52,7 +52,7 @@ with gr.Blocks() as demo:
             with gr.Column(scale=1) as coordinates_data:
                 add_images_button = gr.UploadButton(
                     label="Add Images",
-                    file_types=['image'],
+                    file_types=['.png', '.jpeg', '.gif', '.webp'],
                     file_count='multiple',
                 )
                 image_desc_md = gr.Markdown()
