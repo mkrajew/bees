@@ -17,7 +17,7 @@ class WingImage:
 
     def __init__(self, filepath: str, model: torch.nn.Module, mean_coords: torch.tensor, coord_labels):
         self._coordinates = None
-        self._filepath = Path(filepath)
+        self._filepath = Path(filepath).with_suffix('.png')
         self._orig_filepath = Path(filepath)
         self.model = model
         self.mean_coords = mean_coords
@@ -26,12 +26,12 @@ class WingImage:
         self._calc_coordinates()
         self._calc_sections()
 
-        self._image = cv2.imread(str(self._filepath), cv2.IMREAD_COLOR)
+        self._image = cv2.imread(str(self._orig_filepath), cv2.IMREAD_COLOR)
 
     def _calc_coordinates(self):
         """Calculates the coordinates of the bee wing image landmarks"""
         try:
-            image_tensor, x_size, y_size = load_image(self._filepath, unet_fit_rectangle_preprocess)
+            image_tensor, x_size, y_size = load_image(self._orig_filepath, unet_fit_rectangle_preprocess)
         except Exception as e:
             raise LoadImageError(f"Failed to load image from {self.filename}") from e
 
