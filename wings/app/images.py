@@ -1,5 +1,4 @@
 """ Wing Images toolkit for a web application """
-import random
 from pathlib import Path
 
 import cv2
@@ -7,6 +6,7 @@ import numpy as np
 import torch
 from PIL import Image, PngImagePlugin
 
+from wings.app import device
 from wings.gpa import handle_coordinates, procrustes_align, normalize_shape, center_shape
 from wings.utils import load_image
 from wings.visualizing.image_preprocess import unet_fit_rectangle_preprocess, final_coords
@@ -38,7 +38,7 @@ class WingImage:
         self.image_tensor = image_tensor
         self._size = (x_size, y_size)
 
-        output = self.model(image_tensor.cuda().unsqueeze(0))
+        output = self.model(image_tensor.to(device).unsqueeze(0))
         mask = torch.round(output).squeeze().detach().cpu().numpy()
 
         mask_coords = final_coords(mask, x_size, y_size)

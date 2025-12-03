@@ -55,8 +55,12 @@ unet_model = torch.hub.load(
     'mateuszbuda/brain-segmentation-pytorch', 'unet',
     in_channels=3, out_channels=1, init_features=32, pretrained=False
 )
+
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+
 num_epochs = 60
 model = LitNet.load_from_checkpoint(checkpoint_path, model=unet_model, num_epochs=num_epochs, criterion=DiceLoss())
+model = model.to(device)
 model.eval()
 
 mean_coords = torch.load(
