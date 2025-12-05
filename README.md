@@ -21,18 +21,7 @@ make app
 
 
 ## Build & Run in Docker
-
-### Build
 ```bash
-docker build -t pytorch-gradio .
+docker compose up --build
 ```
-
-### Run (CPU mode)
-```
-docker run -p 7860:7860 pytorch-gradio
-```
-
-### Run with CUDA GPU (NVIDIA drivers required)
-```
-docker run --gpus all -p 7860:7860 pytorch-gradio
-```
+This will run the app using GPU is it is available.
