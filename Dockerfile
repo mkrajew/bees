@@ -10,10 +10,6 @@ RUN pip install --upgrade pip && \
 
 WORKDIR /app
 COPY ./wings /app/wings
-COPY ./data/processed/mask_datasets/rectangle/mean_shape.pth /app/data/processed/mask_datasets/rectangle/mean_shape.pth
-COPY ./models/unet-rectangle-epoch=08-val_loss=0.14-unet-training-rectangle_1.ckpt /app/models/unet-rectangle-epoch=08-val_loss=0.14-unet-training-rectangle_1.ckpt
 
-ENV GRADIO_SERVER_NAME="0.0.0.0"
-ENV PYTHONPATH="/app"
 EXPOSE 7860
 CMD ["python", "wings/app/app.py"]
