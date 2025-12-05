@@ -17,3 +17,22 @@ Use the following command:
 
 ```bash
 make app
+```
+
+
+## Build & Run in Docker
+
+### Build
+```bash
+docker build -t pytorch-gradio .
+```
+
+### Run (CPU mode)
+```
+docker run -p 7860:7860 pytorch-gradio
+```
+
+### Run with CUDA GPU (NVIDIA drivers required)
+```
+docker run --gpus all -p 7860:7860 pytorch-gradio
+```
