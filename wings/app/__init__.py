@@ -53,7 +53,7 @@ countries = ['AT', 'GR', 'HR', 'HU', 'MD', 'PL', 'RO', 'SI']
 checkpoint_path = MODELS_DIR / 'unet-rectangle-epoch=08-val_loss=0.14-unet-training-rectangle_1.ckpt'
 unet_model = torch.hub.load(
     'mateuszbuda/brain-segmentation-pytorch', 'unet',
-    in_channels=3, out_channels=1, init_features=32, pretrained=False
+    in_channels=3, out_channels=1, init_features=32, pretrained=False, trust_repo=True
 )
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')

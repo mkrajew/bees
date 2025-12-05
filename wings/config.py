@@ -61,7 +61,7 @@ COORDS_SUFX = '-raw-coordinates.csv'
 IMG_FOLDER_SUFX = '-wing-images'
 
 DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-logger.info(f"{torch.cuda.get_device_name()=}")
+logger.info(f"{torch.cuda.get_device_name()=}" if torch.cuda.is_available() else 'cpu')
 torch.set_float32_matmul_precision('high')
 
 
