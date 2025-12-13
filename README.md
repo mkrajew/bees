@@ -29,7 +29,7 @@ WingAI is designed to support high-throughput morphometric analyses, reduce manu
 ## Running the Application
 
 ### Requirements
-
+TODO
 - Python 3.9+
 - CUDA-capable GPU (optional, recommended)
 - Docker (optional, recommended for reproducibility)
@@ -123,3 +123,16 @@ With GPU acceleration enabled, WingAI processes a single image in approximately 
 ## Citation
 
 Citation will be added after publication.
+
+---
+
+
+## Dataset
+
+WingAI was developed and evaluated using the publicly available dataset:
+
+**[Collection of wing images for conservation of honey bees (Apis mellifera) biodiversity in Europe](https://zenodo.org/records/7244070)**.
+
+This dataset contains annotated bee wing images collected across Europe and serves as the primary source for training, validation, and testing of the WingAI model.
+
+

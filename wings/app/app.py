@@ -30,13 +30,10 @@ with gr.Blocks() as demo:
                     color_map=green_label_colors,
                     height=500,
                     show_label=False,
-                    show_fullscreen_button=False
                 )
                 edit_image = gr.Image(
                     visible=False,
                     interactive=False,
-                    show_download_button=False,
-                    show_fullscreen_button=False
                 )
                 with gr.Row(equal_height=True):
                     filename_scale = 10
