@@ -15,9 +15,3 @@ services:
       - ./data:/app/data
       - ./models:/app/models
     restart: unless-stopped
-
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - capabilities: ["gpu"]
