@@ -9,6 +9,8 @@ The system is based on a deep convolutional neural network (U-Net) combined with
 
 WingAI is designed to support high-throughput morphometric analyses, reduce manual annotation effort, and integrate seamlessly with existing classification workflows such as IdentiFly.
 
+In addition to the application itself, this repository contains the **full pipeline for dataset preprocessing, model training, and evaluation**, including all code used to prepare training data, train the neural network models, and reproduce the experimental results.
+
 ---
 
 ## Key Features
@@ -26,13 +28,49 @@ WingAI is designed to support high-throughput morphometric analyses, reduce manu
 
 ---
 
+## Dataset
+
+WingAI was developed and evaluated using the publicly available dataset:
+
+**[Collection of wing images for conservation of honey bees (Apis mellifera) biodiversity in Europe](https://zenodo.org/records/7244070)**.
+
+This dataset contains annotated bee wing images collected across Europe and serves as the primary source for training, validation, and testing of the WingAI model.
+
+
+---
+
 ## Running the Application
 
+> **Note:**  
+> This section assumes that a **trained model** and a **precomputed mean wing shape** are already available in the project.  
+> If you have not trained the model yet or computed the mean shape, please refer to the  
+> **[Model Training](#model-training)** section at the bottom of this README for detailed instructions.
+
 ### Requirements
-TODO
-- Python 3.9+
+
+- Python 3.12
 - CUDA-capable GPU (optional, recommended)
-- Docker (optional, recommended for reproducibility)
+- Docker (optional, recommended)
+
+### Installation & Environment Setup
+
+This project uses **uv** for dependency and environment management.
+
+#### Sync dependencies
+
+To install the core runtime dependencies:
+
+```bash
+uv sync
+````
+
+#### Development dependencies (optional)
+
+If you plan to work with notebooks, benchmarks, or development tools, install the development dependencies as well:
+```bash
+uv sync --dev
+```
+
 
 ---
 
@@ -94,27 +132,23 @@ With GPU acceleration enabled, WingAI processes a single image in approximately 
 ## Project structure
 ```
 .
-├── Dockerfile / docker-compose.yml     # Docker setup (GPU-enabled)
-├── Makefile                            # Helper commands (run app, etc.)
-├── README.md
-├── requirements.txt / environment.yml  # Python environments
-├── pyproject.toml / setup.cfg          # Package configuration
-├── data/                               # Datasets
-│   ├── raw/                            # Raw wing images
-│   ├── interim/                        # Intermediate processing results
-│   ├── processed/                      # Final processed datasets
-│   └── external/                       # External data sources
-├── models/                             # Trained neural network weights
-├── notebooks/                          # Research and development notebooks
-├── docs/                               # Documentation
-├── references/                         # Reference materials
-├── reports/                            # Figures and analysis outputs
-└── wings/                              # Core WingAI source code
-    ├── app/                            # Gradio-based user interface
-    ├── modeling/                       # Model definitions and training code
-    ├── dataset.py / gpa.py             # Dataset handling and GPA logic
-    ├── visualizing/                    # Visualization utilities
-    └── utils.py                        # Shared helper functions
+├── data                # Datasets
+│   ├── raw             # Raw wing images
+│   ├── interim         # Intermediate processing results
+│   ├── processed       # Final processed datasets
+│   └── external        # External data sources
+├── models              # Trained neural network weights
+├── notebooks           # Research and development notebooks
+├── docs                # Documentation
+├── references          # Reference materials
+├── reports             # Figures and analysis outputs
+└── wings               # Core WingAI source code
+    ├── app             # Gradio-based user interface
+    ├── modeling        # Model definitions and training code
+    ├── dataset         # Dataset handling and GPA logic
+    ├── gpa.py          # GPA logic
+    ├── visualizing     # Visualization utilities
+    └── utils           # Shared helper functions
 
 ```
 
@@ -126,13 +160,35 @@ Citation will be added after publication.
 
 ---
 
+## Model Training
 
-## Dataset
+### Dataset preparation
 
-WingAI was developed and evaluated using the publicly available dataset:
+The model was trained using the dataset described above.
 
-**[Collection of wing images for conservation of honey bees (Apis mellifera) biodiversity in Europe](https://zenodo.org/records/7244070)**.
+To train the model, unpack the downloaded dataset into: `data/raw`.
 
-This dataset contains annotated bee wing images collected across Europe and serves as the primary source for training, validation, and testing of the WingAI model.
+Next, preprocess the raw data into training-ready datasets. This can be done using the notebook:
+`04_save_datasets.ipynb`.
 
+After generating the datasets, compute the mean wing shape with the notebook:
+`09_GPA_impl.ipynb`.
 
+### Model training
+
+Once the training datasets and the mean wing shape have been prepared, configure the training parameters in the following file:
+
+`wings/modeling/training/unet_training.py`
+
+This includes paths to the datasets, training hyperparameters, and output directories.
+
+After setting the desired parameters, start the training by running:
+
+`uv run wings/modeling/training/unet_training.py`
+
+During training, the pipeline automatically monitors validation performance and saves the best-performing model checkpoints to the `models/` directory.
+
+After training is complete, select the appropriate checkpoint file together with the computed mean wing shape and provide them to the application in the designated configuration locations.
+These files are required for running inference and for correct landmark ordering during application execution.
+
+---

@@ -6,7 +6,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 RUN pip install --upgrade pip && \
-    pip install gradio==5.47.0 lightning loguru opencv-python scipy scikit-learn matplotlib
+    pip install gradio lightning loguru opencv-python scipy scikit-learn matplotlib
 
 WORKDIR /app
 COPY ./wings /app/wings
