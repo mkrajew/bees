@@ -130,7 +130,7 @@ With GPU acceleration enabled, WingAI processes a single image in approximately 
 ---
 
 ## Project structure
-```
+```graphql
 .
 ├── data                # Datasets
 │   ├── raw             # Raw wing images
@@ -174,7 +174,7 @@ Next, preprocess the raw data into training-ready datasets. This can be done usi
 After generating the datasets, compute the mean wing shape with the notebook:
 `09_GPA_impl.ipynb`.
 
-### Model training
+### Run training
 
 Once the training datasets and the mean wing shape have been prepared, configure the training parameters in the following file:
 
