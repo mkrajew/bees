@@ -1,4 +1,4 @@
 .PHONY: app
 
 app:
-	python wings/app/app.py
+	uv run wings/app/app.py
