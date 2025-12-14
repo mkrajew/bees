@@ -130,7 +130,7 @@ With GPU acceleration enabled, WingAI processes a single image in approximately 
 ---
 
 ## Project structure
-```graphql
+```text
 .
 ├── data                # Datasets
 │   ├── raw             # Raw wing images
