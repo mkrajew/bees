@@ -1,4 +1,5 @@
-from utils import *
+import utils
+import gradio as gr
 
 with gr.Blocks() as demo:
     gr.Markdown("# WingAI")
@@ -27,7 +28,7 @@ with gr.Blocks() as demo:
                     check_images_info_md = gr.Markdown()
                     next_check_button = gr.Button(value="Next image", size="sm", variant="primary")
                 output_image = gr.AnnotatedImage(
-                    color_map=green_label_colors,
+                    color_map=utils.green_label_colors,
                     height=500,
                     show_label=False,
                 )
@@ -91,7 +92,7 @@ with gr.Blocks() as demo:
         reset_button = gr.Button(value="Reset", size="sm")
 
     files_input.change(
-        fn=update_submit_button_value,
+        fn=utils.update_submit_button_value,
         inputs=files_input,
         outputs=submit_button,
     )
@@ -103,48 +104,48 @@ with gr.Blocks() as demo:
         ),
         outputs=[entry_page, image_page]
     ).then(
-        fn=input_images,
+        fn=utils.input_images,
         inputs=files_input,
         outputs=[wing_images, image_check_idxs],
         show_progress_on=output_image,
     )
     submit_button_click.failure(
-        fn=input_images_failure,
+        fn=utils.input_images_failure,
         outputs=output_image,
     )
     submit_button_click.success(
-        fn=update_output_image,
+        fn=utils.update_output_image,
         inputs=[wing_images, image_idx],
         outputs=[output_image, filename_textbox],
     ).then(
-        fn=update_image_desc_md,
+        fn=utils.update_image_desc_md,
         inputs=[wing_images, image_idx],
         outputs=image_desc_md
     ).then(
-        fn=update_dataframe,
+        fn=utils.update_dataframe,
         inputs=wing_images,
         outputs=df,
     ).then(
-        fn=show_check_images,
+        fn=utils.show_check_images,
         inputs=image_check_idxs,
         outputs=[check_images_info_md, check_images_row],
     )
 
     filename_textbox.submit(
-        fn=update_filename,
+        fn=utils.update_filename,
         inputs=[filename_textbox, wing_images, image_idx],
         outputs=[filename_textbox, wing_images]
     ).then(
-        fn=update_dataframe,
+        fn=utils.update_dataframe,
         inputs=wing_images,
         outputs=df,
     )
 
     output_image.select(
-        fn=select_coordinate,
+        fn=utils.select_coordinate,
         outputs=selected_coordinate
     ).then(
-        fn=update_coordinates,
+        fn=utils.update_coordinates,
         inputs=[wing_images, image_idx, selected_coordinate],
         outputs=[
             point_description,
@@ -153,21 +154,21 @@ with gr.Blocks() as demo:
             edit_button,
         ],
     ).then(
-        fn=update_output_image,
+        fn=utils.update_output_image,
         inputs=[wing_images, image_idx],
         outputs=[output_image, filename_textbox],
     )
 
     right_button.click(
-        fn=right_button_click,
+        fn=utils.right_button_click,
         inputs=[wing_images, image_idx, image_check_idxs],
         outputs=[image_idx, image_check_idxs],
     ).then(
-        fn=update_output_image,
+        fn=utils.update_output_image,
         inputs=[wing_images, image_idx],
         outputs=[output_image, filename_textbox],
     ).then(
-        fn=update_coordinates,
+        fn=utils.update_coordinates,
         inputs=[wing_images, image_idx, selected_coordinate],
         outputs=[
             point_description,
@@ -176,25 +177,25 @@ with gr.Blocks() as demo:
             edit_button,
         ],
     ).then(
-        fn=update_image_desc_md,
+        fn=utils.update_image_desc_md,
         inputs=[wing_images, image_idx],
         outputs=image_desc_md
     ).then(
-        fn=show_check_images,
+        fn=utils.show_check_images,
         inputs=image_check_idxs,
         outputs=[check_images_info_md, check_images_row],
     )
 
     left_button.click(
-        fn=left_button_click,
+        fn=utils.left_button_click,
         inputs=[wing_images, image_idx, image_check_idxs],
         outputs=[image_idx, image_check_idxs],
     ).then(
-        fn=update_output_image,
+        fn=utils.update_output_image,
         inputs=[wing_images, image_idx],
         outputs=[output_image, filename_textbox],
     ).then(
-        fn=update_coordinates,
+        fn=utils.update_coordinates,
         inputs=[wing_images, image_idx, selected_coordinate],
         outputs=[
             point_description,
@@ -203,56 +204,56 @@ with gr.Blocks() as demo:
             edit_button,
         ],
     ).then(
-        fn=update_image_desc_md,
+        fn=utils.update_image_desc_md,
         inputs=[wing_images, image_idx],
         outputs=image_desc_md
     ).then(
-        fn=show_check_images,
+        fn=utils.show_check_images,
         inputs=image_check_idxs,
         outputs=[check_images_info_md, check_images_row],
     )
 
     add_images_upload = add_images_button.upload(
-        fn=add_images,
+        fn=utils.add_images,
         inputs=[add_images_button, wing_images, image_check_idxs],
         outputs=[wing_images, image_check_idxs],
         show_progress_on=output_image,
     )
 
     add_images_upload.failure(
-        fn=input_images_failure,
+        fn=utils.input_images_failure,
         outputs=output_image,
     )
 
     add_images_upload.success(
-        fn=update_image_desc_md,
+        fn=utils.update_image_desc_md,
         inputs=[wing_images, image_idx],
         outputs=image_desc_md
     ).then(
-        fn=update_dataframe,
+        fn=utils.update_dataframe,
         inputs=wing_images,
         outputs=df,
     ).then(
-        fn=show_check_images,
+        fn=utils.show_check_images,
         inputs=image_check_idxs,
         outputs=[check_images_info_md, check_images_row],
     )
 
     generate_data_button.click(
-        fn=generate_data,
+        fn=utils.generate_data,
         inputs=[download_type, wing_images, temp_dir],
         outputs=[download_button, temp_dir],
         show_progress_on=download_type,
     )
 
     download_button.click(
-        fn=clean_temp,
+        fn=utils.clean_temp,
         inputs=temp_dir,
         outputs=[temp_dir, download_button],
     )
 
     edit_button.click(
-        fn=show_edit_image,
+        fn=utils.show_edit_image,
         inputs=[wing_images, image_idx, selected_coordinate],
         outputs=[
             output_image,
@@ -267,21 +268,21 @@ with gr.Blocks() as demo:
     )
 
     edit_image.select(
-        fn=get_edit_coordinates,
+        fn=utils.get_edit_coordinates,
         inputs=[edit_image],
         outputs=[tmp_edit_coords]
     ).then(
-        fn=show_edit_point,
+        fn=utils.show_edit_point,
         inputs=[wing_images, image_idx, selected_coordinate, tmp_edit_coords],
         outputs=[edit_image, selected_section_x, selected_section_y]
     )
 
     confirm_button.click(
-        fn=confirm_edit_coords,
+        fn=utils.confirm_edit_coords,
         inputs=[wing_images, image_idx, selected_coordinate, tmp_edit_coords],
         outputs=[wing_images, tmp_edit_coords],
     ).then(
-        fn=cancel_button_click,
+        fn=utils.cancel_button_click,
         outputs=[
             confirm_cancel_buttons,
             edit_button,
@@ -293,11 +294,11 @@ with gr.Blocks() as demo:
             generate_data_button,
         ]
     ).then(
-        fn=update_output_image,
+        fn=utils.update_output_image,
         inputs=[wing_images, image_idx],
         outputs=[output_image, filename_textbox],
     ).then(
-        fn=update_coordinates,
+        fn=utils.update_coordinates,
         inputs=[wing_images, image_idx, selected_coordinate],
         outputs=[
             point_description,
@@ -306,13 +307,13 @@ with gr.Blocks() as demo:
             edit_button,
         ],
     ).then(
-        fn=update_dataframe,
+        fn=utils.update_dataframe,
         inputs=wing_images,
         outputs=df,
     )
 
     cancel_button.click(
-        fn=cancel_button_click,
+        fn=utils.cancel_button_click,
         outputs=[
             confirm_cancel_buttons,
             edit_button,
@@ -324,7 +325,7 @@ with gr.Blocks() as demo:
             generate_data_button,
         ]
     ).then(
-        fn=update_coordinates,
+        fn=utils.update_coordinates,
         inputs=[wing_images, image_idx, selected_coordinate],
         outputs=[
             point_description,
@@ -335,15 +336,15 @@ with gr.Blocks() as demo:
     )
 
     next_check_button.click(
-        fn=next_check_image,
+        fn=utils.next_check_image,
         inputs=[image_check_idxs, image_idx, wing_images],
         outputs=[image_check_idxs, image_idx],
     ).then(
-        fn=update_output_image,
+        fn=utils.update_output_image,
         inputs=[wing_images, image_idx],
         outputs=[output_image, filename_textbox],
     ).then(
-        fn=update_coordinates,
+        fn=utils.update_coordinates,
         inputs=[wing_images, image_idx, selected_coordinate],
         outputs=[
             point_description,
@@ -352,17 +353,17 @@ with gr.Blocks() as demo:
             edit_button,
         ],
     ).then(
-        fn=update_image_desc_md,
+        fn=utils.update_image_desc_md,
         inputs=[wing_images, image_idx],
         outputs=image_desc_md
     ).then(
-        fn=show_check_images,
+        fn=utils.show_check_images,
         inputs=image_check_idxs,
         outputs=[check_images_info_md, check_images_row],
     )
 
     reset_button.click(
-        fn=reset_app,
+        fn=utils.reset_app,
         inputs=[],
         outputs=[
             entry_page,
@@ -381,5 +382,10 @@ with gr.Blocks() as demo:
         ]
     )
 
-if __name__ == '__main__':
+
+def main():
     demo.launch()
+
+
+if __name__ == '__main__':
+    main()
