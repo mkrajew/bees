@@ -6,6 +6,8 @@ from pathlib import Path
 import gradio as gr
 import pandas as pd
 import torch
+import torchvision.transforms.functional as F
+from PIL import Image
 
 from wings.app import model, mean_coords, section_labels, green_label_colors_orig, red_color_str
 from wings.app.images import WingImage, LoadImageError
@@ -13,6 +15,7 @@ from wings.config import APP_DIR
 from wings.visualizing.visualize import visualize_coords
 
 green_label_colors = green_label_colors_orig.copy()
+max_size = 1000
 
 
 def update_submit_button_value(filepaths):
@@ -32,6 +35,17 @@ def input_images(filepaths, progress=gr.Progress(track_tqdm=True)):
     check_idxs = []
     for idx, filepath in enumerate(progress.tqdm(filepaths, desc="Processing images...")):
         try:
+            img = Image.open(filepath).convert("L")
+            w, h = img.size
+            if w > max_size or h > max_size:
+                resized = F.resize(
+                    img,
+                    max_size-1,
+                    interpolation=F.InterpolationMode.LANCZOS,
+                    antialias=True,
+                    max_size=max_size,
+                )
+                resized.save(filepath)
             image = WingImage(filepath, model, mean_coords, section_labels)
             images.append(image)
         except LoadImageError as e:
@@ -51,6 +65,17 @@ def add_images(new_filepaths, images, check_idxs, progress=gr.Progress(track_tqd
     old_images_num = len(images)
     for idx, filepath in enumerate(progress.tqdm(new_filepaths, desc="Processing images...")):
         try:
+            img = Image.open(filepath).convert("L")
+            w, h = img.size
+            if w > max_size or h > max_size:
+                resized = F.resize(
+                    img,
+                    max_size - 1,
+                    interpolation=F.InterpolationMode.LANCZOS,
+                    antialias=True,
+                    max_size=max_size,
+                )
+            resized.save(filepath, format="PNG")
             image = WingImage(filepath, model, mean_coords, section_labels)
             if image not in images:
                 images.append(image)
@@ -83,7 +108,7 @@ def input_images_failure():
 def update_output_image(images, idx):
     image = images[idx]
     img = image.image
-    img = visualize_coords(img, image.coordinates.flatten(), spot_size=2, show=False)
+    # img = visualize_coords(img, image.coordinates.flatten(), spot_size=2, show=False)
 
     return (
         gr.update(value=(img, image.sections), color_map=green_label_colors),  # output_image
@@ -290,3 +315,14 @@ def reset_app():
 def input_image_time(filepath):
     image = WingImage(filepath, model, mean_coords, section_labels)
     return image.coordinates
+
+
+def delete_button_click(images, idx, check_images):
+    if len(images) > 1:
+        if idx in check_images:
+            check_images.remove(idx)
+        check_images = list(map(lambda check_idx: check_idx-1 if check_idx > idx else check_idx, check_images))
+        del images[idx]
+        idx = idx % len(images)
+    else: raise gr.Error(message="You cannot delete the last image.", print_exception=False)
+    return images, idx, check_images

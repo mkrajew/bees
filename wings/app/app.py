@@ -7,7 +7,7 @@ with gr.Blocks() as demo:
 
     with gr.Column() as entry_page:
         files_input = gr.File(
-            file_types=['.png', '.jpeg', '.gif', '.webp'],
+            file_types=['.png', '.jpeg', '.gif', '.webp', '.jpg'],
             file_count='multiple',
             label="Upload bee-wing images",
             height=500,
@@ -50,7 +50,7 @@ with gr.Blocks() as demo:
             with gr.Column(scale=1) as coordinates_data:
                 add_images_button = gr.UploadButton(
                     label="Add Images",
-                    file_types=['.png', '.jpeg', '.gif', '.webp'],
+                    file_types=['.png', '.jpeg', '.gif', '.webp', '.jpg'],
                     file_count='multiple',
                 )
                 image_desc_md = gr.Markdown()
@@ -72,6 +72,7 @@ with gr.Blocks() as demo:
                     precision=0
                 )
                 edit_button = gr.Button("Edit", interactive=False)
+                delete_button = gr.Button("Delete image", interactive=True, size='sm')
                 with gr.Row(visible=False) as confirm_cancel_buttons:
                     confirm_button = gr.Button(value="Confirm", interactive=True)
                     cancel_button = gr.Button(value="Cancel", interactive=True)
@@ -90,6 +91,7 @@ with gr.Blocks() as demo:
         with gr.Accordion(open=False, label="See all files") as files_list:
             df = gr.Dataframe(show_row_numbers=True)
         reset_button = gr.Button(value="Reset", size="sm")
+    gr.Markdown("Copyright Mateusz Krajewski")
 
     files_input.change(
         fn=utils.update_submit_button_value,
@@ -361,6 +363,42 @@ with gr.Blocks() as demo:
         inputs=image_check_idxs,
         outputs=[check_images_info_md, check_images_row],
     )
+
+
+    delete_button.click(
+        fn=utils.delete_button_click,
+        inputs=[wing_images, image_idx, image_check_idxs],
+        outputs=[wing_images, image_idx, image_check_idxs]
+    ).then(
+        fn=utils.update_output_image,
+        inputs=[wing_images, image_idx],
+        outputs=[output_image, filename_textbox],
+    ).then(
+        fn=utils.update_image_desc_md,
+        inputs=[wing_images, image_idx],
+        outputs=image_desc_md
+    ).then(
+        fn=utils.update_dataframe,
+        inputs=wing_images,
+        outputs=df,
+    ).then(
+        fn=utils.show_check_images,
+        inputs=image_check_idxs,
+        outputs=[check_images_info_md, check_images_row],
+    ).then(
+        fn=utils.cancel_button_click,
+        outputs=[
+            confirm_cancel_buttons,
+            edit_button,
+            edit_image,
+            output_image,
+            left_button,
+            right_button,
+            add_images_button,
+            generate_data_button,
+        ]
+    )
+
 
     reset_button.click(
         fn=utils.reset_app,
