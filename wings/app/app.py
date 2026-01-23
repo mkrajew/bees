@@ -102,7 +102,7 @@ with gr.Blocks() as demo:
         with gr.Accordion(open=False, label="See all files") as files_list:
             df = gr.Dataframe(show_row_numbers=True)
         reset_button = gr.Button(value="Reset", size="sm")
-    gr.Markdown("Copyright Mateusz Krajewski")
+    gr.Markdown("© 2026 Mateusz Krajewski · GPLv3")
 
     files_input.change(
         fn=utils.update_submit_button_value,

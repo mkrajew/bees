@@ -192,3 +192,15 @@ After training is complete, select the appropriate checkpoint file together with
 These files are required for running inference and for correct landmark ordering during application execution.
 
 ---
+
+---
+This software was developed as part of an engineering thesis.
+
+The author retains full copyright to the source code.  
+The project is released as open-source software under the terms of the **GNU General Public License v3 (GPLv3)**.
+
+I would like to express my sincere gratitude to my supervisor Dr. Łukasz Neumann for the valuable guidance, constructive feedback, and continuous support provided throughout the course of this work.
+
+I would also like to thank Bartłomiej Molasa (Faculty of Biology, Jagiellonian University) and Michał R. Kolasa (Institute of Zootechnics – National Research Institute) for their substantial scientific support, expert consultations, and meaningful contributions to the design, testing, and functional evaluation of the developed system.
+
+Their knowledge, experience, and insightful remarks played a crucial role in the successful completion of this project.
