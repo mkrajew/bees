@@ -1,5 +1,6 @@
-import utils
 import gradio as gr
+
+import utils
 
 with gr.Blocks() as demo:
     gr.Markdown("# WingAI")
@@ -52,6 +53,16 @@ with gr.Blocks() as demo:
                     label="Add Images",
                     file_types=['.png', '.jpeg', '.gif', '.webp', '.jpg'],
                     file_count='multiple',
+                )
+                image_num_slider = gr.Slider(
+                    minimum=1,
+                    maximum=10,
+                    value=1,
+                    step=1,
+                    precision=0,
+                    label="Image Number",
+                    info="of 15",
+                    interactive=True,
                 )
                 image_desc_md = gr.Markdown()
                 point_description = gr.Markdown(value="## Choose a point to see the coordinates")
@@ -122,7 +133,7 @@ with gr.Blocks() as demo:
     ).then(
         fn=utils.update_image_desc_md,
         inputs=[wing_images, image_idx],
-        outputs=image_desc_md
+        outputs=[image_desc_md, image_num_slider]
     ).then(
         fn=utils.update_dataframe,
         inputs=wing_images,
@@ -181,7 +192,7 @@ with gr.Blocks() as demo:
     ).then(
         fn=utils.update_image_desc_md,
         inputs=[wing_images, image_idx],
-        outputs=image_desc_md
+        outputs=[image_desc_md, image_num_slider]
     ).then(
         fn=utils.show_check_images,
         inputs=image_check_idxs,
@@ -208,7 +219,34 @@ with gr.Blocks() as demo:
     ).then(
         fn=utils.update_image_desc_md,
         inputs=[wing_images, image_idx],
-        outputs=image_desc_md
+        outputs=[image_desc_md, image_num_slider]
+    ).then(
+        fn=utils.show_check_images,
+        inputs=image_check_idxs,
+        outputs=[check_images_info_md, check_images_row],
+    )
+
+    image_num_slider.release(
+        fn=utils.release_image_slider,
+        inputs=[image_num_slider, image_idx, image_check_idxs],
+        outputs=[image_idx, image_check_idxs],
+    ).then(
+        fn=utils.update_output_image,
+        inputs=[wing_images, image_idx],
+        outputs=[output_image, filename_textbox],
+    ).then(
+        fn=utils.update_coordinates,
+        inputs=[wing_images, image_idx, selected_coordinate],
+        outputs=[
+            point_description,
+            selected_section_x,
+            selected_section_y,
+            edit_button,
+        ],
+    ).then(
+        fn=utils.update_image_desc_md,
+        inputs=[wing_images, image_idx],
+        outputs=[image_desc_md, image_num_slider]
     ).then(
         fn=utils.show_check_images,
         inputs=image_check_idxs,
@@ -230,7 +268,7 @@ with gr.Blocks() as demo:
     add_images_upload.success(
         fn=utils.update_image_desc_md,
         inputs=[wing_images, image_idx],
-        outputs=image_desc_md
+        outputs=[image_desc_md, image_num_slider]
     ).then(
         fn=utils.update_dataframe,
         inputs=wing_images,
@@ -357,13 +395,12 @@ with gr.Blocks() as demo:
     ).then(
         fn=utils.update_image_desc_md,
         inputs=[wing_images, image_idx],
-        outputs=image_desc_md
+        outputs=[image_desc_md, image_num_slider]
     ).then(
         fn=utils.show_check_images,
         inputs=image_check_idxs,
         outputs=[check_images_info_md, check_images_row],
     )
-
 
     delete_button.click(
         fn=utils.delete_button_click,
@@ -376,7 +413,7 @@ with gr.Blocks() as demo:
     ).then(
         fn=utils.update_image_desc_md,
         inputs=[wing_images, image_idx],
-        outputs=image_desc_md
+        outputs=[image_desc_md, image_num_slider]
     ).then(
         fn=utils.update_dataframe,
         inputs=wing_images,
@@ -398,7 +435,6 @@ with gr.Blocks() as demo:
             generate_data_button,
         ]
     )
-
 
     reset_button.click(
         fn=utils.reset_app,

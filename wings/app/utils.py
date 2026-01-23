@@ -38,14 +38,14 @@ def input_images(filepaths, progress=gr.Progress(track_tqdm=True)):
             img = Image.open(filepath).convert("L")
             w, h = img.size
             if w > max_size or h > max_size:
-                resized = F.resize(
+                img = F.resize(
                     img,
                     max_size-1,
                     interpolation=F.InterpolationMode.LANCZOS,
                     antialias=True,
                     max_size=max_size,
                 )
-                resized.save(filepath)
+            img.save(filepath, format="PNG")
             image = WingImage(filepath, model, mean_coords, section_labels)
             images.append(image)
         except LoadImageError as e:
@@ -68,14 +68,14 @@ def add_images(new_filepaths, images, check_idxs, progress=gr.Progress(track_tqd
             img = Image.open(filepath).convert("L")
             w, h = img.size
             if w > max_size or h > max_size:
-                resized = F.resize(
+                img = F.resize(
                     img,
                     max_size - 1,
                     interpolation=F.InterpolationMode.LANCZOS,
                     antialias=True,
                     max_size=max_size,
                 )
-            resized.save(filepath, format="PNG")
+            img.save(filepath, format="PNG")
             image = WingImage(filepath, model, mean_coords, section_labels)
             if image not in images:
                 images.append(image)
@@ -118,7 +118,10 @@ def update_output_image(images, idx):
 
 def update_image_desc_md(images, idx):
     sizes = images[idx].size
-    return gr.update(value=f"# Image {idx + 1} / {len(images)}\nSize: {sizes[0]} x {sizes[1]}")
+    return (
+        gr.update(value=f"Size: {sizes[0]} x {sizes[1]}"),
+        gr.update(value=idx+1, maximum=len(images), info=f"# of {len(images)}")
+    )
 
 
 def calc_dataframe(images):
@@ -176,6 +179,12 @@ def left_button_click(filepaths, idx, check_images):
     if idx in check_images:
         check_images.remove(idx)
     return (idx - 1) % len(filepaths), check_images
+
+
+def release_image_slider(slider_idx, idx, check_images):
+    if idx in check_images:
+        check_images.remove(idx)
+    return slider_idx-1, check_images
 
 
 def generate_data(options, images, user_tmp, progress=gr.Progress(track_tqdm=True)):
