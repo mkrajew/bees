@@ -1,5 +1,14 @@
 # WingAI – Automated Bee Wing Landmark Detection
 
+> 🌐 **WingAI is live:** https://wingai.ii.pw.edu.pl/  
+> Open the web app in your browser — no local installation required.
+
+<a href="https://wingai.ii.pw.edu.pl/" target="_blank">
+  <img src="https://img.shields.io/badge/Live%20demo-wingai.ii.pw.edu.pl-2ea44f?style=for-the-badge" alt="Live demo">
+</a>
+
+---
+
 <a target="_blank" href="https://cookiecutter-data-science.drivendata.org/">
     <img src="https://img.shields.io/badge/CCDS-Project%20template-328F97?logo=cookiecutter" />
 </a>
