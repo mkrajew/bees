@@ -317,7 +317,8 @@ def reset_app():
         None, 0, None, None, None, None,  # reset all states
         gr.update(value=None),  # selected_section_x
         gr.update(value=None),  # selected_section_y
-        gr.update(value="## Choose a point to see the coordinates")  # point_description
+        gr.update(value="## Choose a point to see the coordinates"),  # point_description
+        gr.update(visible=False)  # edit_image
     )
 
 
