@@ -20,6 +20,8 @@ WingAI is designed to support high-throughput morphometric analyses, reduce manu
 
 In addition to the application itself, this repository contains the **full pipeline for dataset preprocessing, model training, and evaluation**, including all code used to prepare training data, train the neural network models, and reproduce the experimental results.
 
+![Sample landmarks on image](./sample_landmarks_on_image.png)
+
 ---
 
 ## Key Features
