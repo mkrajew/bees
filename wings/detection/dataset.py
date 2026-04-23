@@ -1,12 +1,11 @@
-"""Build a YOLO NDJSON detection dataset from raw wing images."""
+"""Build an Ultralytics YOLO detection dataset from raw wing images."""
 
-import json
-from datetime import datetime, timezone
 from pathlib import Path
 
 import cv2
 import numpy as np
 import typer
+import yaml
 from loguru import logger
 from tqdm import tqdm
 from numpy.typing import NDArray
@@ -107,14 +106,6 @@ def pad_image(
     return out
 
 
-def to_relative_path(path: Path) -> str:
-    """Convert a path to a DEFAULT_OUTPUT_FOLDER-relative POSIX path when possible."""
-    try:
-        return path.relative_to(DEFAULT_OUTPUT_FOLDER).as_posix()
-    except ValueError:
-        return path.as_posix()
-
-
 def read_coordinates(filepath: Path, img: np.ndarray):
     filename = filepath.name
     country = filename.split("-", 1)[0]
@@ -151,86 +142,72 @@ def process_bbox(x_coords, y_coords, img, x_factor=1.2, y_factor=1.4):
     return [0, cx, cy, w, h]
 
 
-def build_dataset_ndjson(
+def build_dataset_yolo(
     output_folder: Path = DEFAULT_OUTPUT_FOLDER,
     countries: list[str] | None = None,
 ) -> dict[str, int]:
-    """Generate dataset.ndjson with a bounding box for each wing image."""
+    """Generate an Ultralytics YOLO dataset with images/{split}/ and labels/{split}/ layout."""
     selected_countries = countries or COUNTRIES
-    output_path = output_folder / "dataset.ndjson"
-    logger.info(f"Starting NDJSON build for {len(selected_countries)} countries")
-    logger.info(f"Output path: {output_path}")
+    logger.info(f"Starting YOLO dataset build for {len(selected_countries)} countries")
+    logger.info(f"Output folder: {output_folder}")
+
     image_paths = collect_image_paths(RAW_DATA_DIR, selected_countries)
     if not image_paths:
         raise RuntimeError("No images found for the selected countries.")
     logger.info(f"Total candidate images: {len(image_paths)}")
 
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-
-    created_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-    dataset_record = {
-        "type": "dataset",
-        "task": "detect",
-        "name": "bee-wing-detection",
-        "description": "Bee wing images bounding boxes detection.",
-        "class_names": {"0": "wing"},
-        "created_at": created_at,
-        "updated_at": created_at,
-        "version": 1,
-    }
+    for split in ("train", "val", "test"):
+        (output_folder / "images" / split).mkdir(parents=True, exist_ok=True)
+        (output_folder / "labels" / split).mkdir(parents=True, exist_ok=True)
 
     split_counts = {"train": 0, "val": 0, "test": 0}
     written = 0
 
-    with output_path.open("w", encoding="utf-8") as f:
-        f.write(json.dumps(dataset_record, ensure_ascii=False) + "\n")
+    for image_path in tqdm(image_paths, desc="Processing images", unit="img"):
+        image = cv2.imread(str(image_path), cv2.IMREAD_COLOR)
+        if image is None:
+            logger.warning(f"Unreadable image skipped: {image_path}")
+            continue
 
-        for image_path in tqdm(image_paths, desc="Processing images", unit="img"):
-            image = cv2.imread(str(image_path), cv2.IMREAD_COLOR)
-            if image is None:
-                logger.warning(f"Unreadable image skipped: {image_path}")
-                continue
+        x_coords, y_coords = read_coordinates(image_path, image)
 
-            x_coords, y_coords = read_coordinates(image_path, image)
+        pad_values = tuple(np.random.randint(100, 600) for _ in range(4))
+        padded = pad_image(image, pad_values)
 
-            pad_values = tuple(np.random.randint(100, 600) for _ in range(4))
-            padded = pad_image(image, pad_values)
+        x_coords = x_coords + pad_values[2]
+        y_coords = y_coords + pad_values[0]
 
-            x_coords = x_coords + pad_values[2]
-            y_coords = y_coords + pad_values[0]
+        bbox = process_bbox(x_coords, y_coords, padded)
+        split = choose_split()
 
-            bbox = process_bbox(x_coords, y_coords, padded)
+        img_save_path = output_folder / "images" / split / image_path.name
+        cv2.imwrite(str(img_save_path), padded)
 
-            height, width = padded.shape[:2]
-            split = choose_split()
+        label_save_path = output_folder / "labels" / split / (image_path.stem + ".txt")
+        class_id, cx, cy, w, h = bbox
+        label_save_path.write_text(f"{class_id} {cx} {cy} {w} {h}\n", encoding="utf-8")
 
-            country = image_path.name.split("-", 1)[0]
-            save_path = (
-                output_folder
-                / "images"
-                / f"{country}{IMG_FOLDER_SUFX}"
-                / image_path.name
-            )
-            save_path.parent.mkdir(parents=True, exist_ok=True)
-            cv2.imwrite(str(save_path), padded)
-
-            image_record = {
-                "type": "image",
-                "file": to_relative_path(save_path),
-                "width": width,
-                "height": height,
-                "split": split,
-                "annotations": {"boxes": [bbox]},
-            }
-            f.write(json.dumps(image_record, ensure_ascii=False) + "\n")
-            split_counts[split] += 1
-            written += 1
+        split_counts[split] += 1
+        written += 1
 
     if written == 0:
         raise RuntimeError("No records were written (all images were unreadable).")
 
-    logger.info(f"Saved {written} image records to {output_path}")
+    yaml_path = output_folder / "dataset.yaml"
+    yaml_content = {
+        "path": output_folder.as_posix(),
+        "train": "images/train",
+        "val": "images/val",
+        "test": "images/test",
+        "nc": 1,
+        "names": {0: "wing"},
+    }
+    with yaml_path.open("w", encoding="utf-8") as f:
+        yaml.dump(yaml_content, f, default_flow_style=False, allow_unicode=True)
+
+    logger.info(f"Saved {written} image records to {output_folder}")
     logger.info(f"Split counts: {split_counts}")
+    logger.info(f"Dataset YAML written to {yaml_path}")
 
     return {"total": written, **split_counts}
 
@@ -244,8 +221,8 @@ def main(
         help="Output folder.",
     ),
 ) -> None:
-    """Create YOLO NDJSON dataset from raw wing images."""
-    build_dataset_ndjson(output_folder=output)
+    """Create Ultralytics YOLO dataset from raw wing images."""
+    build_dataset_yolo(output_folder=output)
 
 
 if __name__ == "__main__":
