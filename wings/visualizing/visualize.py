@@ -28,7 +28,8 @@ def plt_imshow(img: np.ndarray, img_title: str | None = None) -> None:
     """
 
     plt.figure()
-    plt.title(img_title)
+    if img_title:
+        plt.title(img_title)
     plt.imshow(img, cmap='gray', vmin=0, vmax=255)
     plt.axis("off")
     plt.show()
