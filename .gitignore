@@ -1,6 +1,7 @@
 # Data
 /data/
 models
+wings/detection/runs/
 
 # Mac OS-specific storage files
 .DS_Store
