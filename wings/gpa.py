@@ -33,7 +33,9 @@ def procrustes_align(x, y, only_matrix=False):
     return x @ r
 
 
-def generalized_procrustes_analysis(shapes, tol=1e-6, max_iter=100, device=torch.device('cpu')):
+def generalized_procrustes_analysis(
+    shapes, tol=1e-6, max_iter=100, device=torch.device("cpu")
+):
     """
     Performs Generalized Procrustes Analysis (GPA) on a set of 2D shapes.
 
@@ -81,7 +83,7 @@ def solve_assignment(cost_matrix):
     return idx
 
 
-def recover_order(mean_shape, unordered_shape, max_iter=5, device=torch.device('cpu')):
+def recover_order(mean_shape, unordered_shape, max_iter=5, device=torch.device("cpu")):
     """
     mean_shape: torch tensor (n_points, 2)
     unordered_shape: torch tensor (n_points, 2) - same points but random order/transform
@@ -123,16 +125,20 @@ def handle_coordinates(coords, mean_coords):
     mask_coords = coords.detach().clone()
     if len(mask_coords) > 19:
         extra_points = len(mask_coords) - len(mean_coords)
-        best_loss = float('inf')
+        best_loss = float("inf")
         best_coords = None
 
         if extra_points <= 3:
-            for remove_idx in itertools.combinations(range(len(mask_coords)), extra_points):
+            for remove_idx in itertools.combinations(
+                range(len(mask_coords)), extra_points
+            ):
                 reduced = torch.stack(
                     [p for i, p in enumerate(mask_coords) if i not in remove_idx]
                 )
                 reordered = recover_order(mean_coords, reduced)
-                gpa = procrustes_align(normalize_shape(center_shape(reordered)), mean_coords)
+                gpa = procrustes_align(
+                    normalize_shape(center_shape(reordered)), mean_coords
+                )
                 loss = torch.norm(gpa - mean_coords).item()
                 if loss < best_loss:
                     best_loss = loss
@@ -143,19 +149,23 @@ def handle_coordinates(coords, mean_coords):
 
     elif len(mask_coords) <= 18:
         missing_points = len(mean_coords) - len(mask_coords)
-        best_loss = float('inf')
+        best_loss = float("inf")
         best_missing_idxs = None
         best_reordered = None
         best_temp_mean = None
 
         if missing_points <= 3:
-            for remove_idx in itertools.combinations(range(len(mean_coords)), missing_points):
+            for remove_idx in itertools.combinations(
+                range(len(mean_coords)), missing_points
+            ):
                 temp_mean = torch.stack(
                     [p for i, p in enumerate(mean_coords) if i not in remove_idx]
                 )
                 temp_mean_cn = normalize_shape(center_shape(temp_mean))
                 reordered = recover_order(temp_mean_cn, mask_coords)
-                gpa = procrustes_align(normalize_shape(center_shape(reordered)), temp_mean_cn)
+                gpa = procrustes_align(
+                    normalize_shape(center_shape(reordered)), temp_mean_cn
+                )
                 loss = torch.norm(gpa - temp_mean_cn).item()
 
                 if loss < best_loss:
@@ -173,20 +183,30 @@ def handle_coordinates(coords, mean_coords):
             r = procrustes_align(
                 normalize_shape(center_shape(best_reordered)),
                 normalize_shape(center_shape(best_temp_mean)),
-                only_matrix=True
+                only_matrix=True,
             )
 
-            mean_coords_temp = ((mean_coords - t_mean) / s_mean) @ r.T * s_coords + t_coords
+            mean_coords_temp = (
+                (mean_coords - t_mean) / s_mean
+            ) @ r.T * s_coords + t_coords
             missing_points_tensor = mean_coords_temp[list(best_missing_idxs)]
 
             mask_coords = torch.cat([best_reordered, missing_points_tensor], dim=0)
         else:
-            xmin, ymin = mask_coords.min(dim=0).values
-            xmax, ymax = mask_coords.max(dim=0).values
-            random_x = torch.empty(missing_points).uniform_(xmin.item(), xmax.item())
-            random_y = torch.empty(missing_points).uniform_(ymin.item(), ymax.item())
-            random_points = torch.stack([random_x, random_y], dim=1)
-            mask_coords = torch.cat([mask_coords, random_points], dim=0)
+            if len(mask_coords) < 2:
+                mask_coords = torch.rand(len(mean_coords), 2) * 100
+            else:
+                xmin, ymin = mask_coords.min(dim=0).values
+                xmax, ymax = mask_coords.max(dim=0).values
+                eps = 1e-6
+                random_x = torch.empty(missing_points).uniform_(
+                    xmin.item(), max(xmax.item(), xmin.item() + eps)
+                )
+                random_y = torch.empty(missing_points).uniform_(
+                    ymin.item(), max(ymax.item(), ymin.item() + eps)
+                )
+                random_points = torch.stack([random_x, random_y], dim=1)
+                mask_coords = torch.cat([mask_coords, random_points], dim=0)
 
     reordered = recover_order(mean_coords, mask_coords)
     return reordered
