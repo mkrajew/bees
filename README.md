@@ -1,8 +1,10 @@
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="./docs/logo-dark.png">
-  <source media="(prefers-color-scheme: light)" srcset="./docs/logo.png">
-  <img alt="WingAI" src="./docs/logo.png" height="80">
-</picture>
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="./docs/logo-dark.png">
+    <source media="(prefers-color-scheme: light)" srcset="./docs/logo.png">
+    <img alt="WingAI" src="./docs/logo.png" height="160">
+  </picture>
+</p>
 
 # WingAI – Automated Bee Wing Landmark Detection
 
