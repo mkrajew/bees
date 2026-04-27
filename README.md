@@ -22,7 +22,7 @@
 </a>
 
 WingAI is an open-source software tool for fully automated detection and annotation of morphometric landmarks on bee wing images.  
-The system is based on a deep convolutional neural network (U-Net) combined with robust post-processing and Generalized Procrustes Analysis (GPA) to ensure biologically consistent landmark ordering.
+The system combines a YOLO-based wing detector with a deep convolutional neural network (U-Net) for landmark localization, complemented by robust post-processing and Generalized Procrustes Analysis (GPA) to ensure biologically consistent landmark ordering.
 
 WingAI is designed to support high-throughput morphometric analyses, reduce manual annotation effort, and integrate seamlessly with existing classification workflows such as IdentiFly.
 
@@ -34,6 +34,7 @@ In addition to the application itself, this repository contains the **full pipel
 
 ## Key Features
 
+- Automatic wing detection in raw images using a trained YOLO model
 - Fully automated detection of 19 homologous morphometric landmarks
 - Robust landmark ordering using Generalized Procrustes Analysis (GPA)
 - Batch processing of large image collections
@@ -181,7 +182,17 @@ Citation will be added after publication.
 
 ## Model Training
 
-### Dataset preparation
+The full training pipeline consists of two stages: wing detection (YOLO) and landmark localization (U-Net).
+
+### Wing Detection – YOLO
+
+A YOLO model was trained to automatically detect and crop bee wings from input images, providing clean, normalized inputs for the landmark localization stage.
+
+Training labels were derived automatically from the existing landmark annotations — no manual bounding box annotation was required. For each image, the bounding box was computed by taking the minimum and maximum x/y values across all landmark coordinates. The resulting box was then expanded by a small percentage on each side to ensure the full wing region was enclosed, accounting for minor landmark placement variation near the wing boundary.
+
+### Landmark Localization – U-Net
+
+#### Dataset preparation
 
 The model was trained using the dataset described above.
 
@@ -193,7 +204,7 @@ Next, preprocess the raw data into training-ready datasets. This can be done usi
 After generating the datasets, compute the mean wing shape with the notebook:
 `09_GPA_impl.ipynb`.
 
-### Run training
+#### Run training
 
 Once the training datasets and the mean wing shape have been prepared, configure the training parameters in the following file:
 
