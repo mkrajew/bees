@@ -96,7 +96,7 @@ class WingsDataset(data.Dataset):
             str(self.data_folder / f"{country}{IMG_FOLDER_SUFX}" / filename)
         )
         x_size, y_size = image.shape[2], image.shape[1]
-        image = image.repeat(3, 1, 1)
+        # image = image.repeat(3, 1, 1)
         image = self.preprocess_func(image)
         return image, x_size, y_size
 
@@ -247,6 +247,26 @@ class MasksDataset(WingsDataset):
             y_start = max(0, y - square_half)
             y_end = min(img_size, y + square_half + 1)
             mask[y_start:y_end, x_start:x_end] = 1
+
+        return torch.from_numpy(mask).unsqueeze(0)
+
+    def generate_circular_mask(
+        self, image: torch.Tensor, labels: torch.Tensor
+    ) -> torch.Tensor:
+        x_coords, y_coords = labels[::2].int(), labels[1::2].int()
+        x_size, y_size = image.shape[2], image.shape[1]
+        assert x_size == y_size, f"Expected square image, got {x_size=} {y_size=}"
+        img_size = x_size
+
+        y_coords = y_size - y_coords - 1
+
+        mask = np.zeros((img_size, img_size), dtype=np.float32)
+        radius = self.square_size // 2
+        radius_sq = radius**2
+        y_grid, x_grid = np.ogrid[:img_size, :img_size]
+        for x, y in zip(x_coords.tolist(), y_coords.tolist()):
+            circle = (x_grid - x) ** 2 + (y_grid - y) ** 2 <= radius_sq
+            mask[circle] = 1
 
         return torch.from_numpy(mask).unsqueeze(0)
 

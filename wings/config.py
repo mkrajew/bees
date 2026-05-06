@@ -39,30 +39,30 @@ from loguru import logger
 PROJ_ROOT = Path(__file__).resolve().parents[1]
 logger.info(f"PROJ_ROOT path is: {PROJ_ROOT}")
 
-DATA_PATH = PROJ_ROOT / 'data'
-RAW_DATA_DIR = DATA_PATH / 'raw'
-INTERIM_DATA_DIR = DATA_PATH / 'interim'
-PROCESSED_DATA_DIR = DATA_PATH / 'processed'
-EXTERNAL_DATA_DIR = DATA_PATH / 'external'
+DATA_PATH = PROJ_ROOT / "data"
+RAW_DATA_DIR = DATA_PATH / "raw"
+INTERIM_DATA_DIR = DATA_PATH / "interim"
+PROCESSED_DATA_DIR = DATA_PATH / "processed"
+EXTERNAL_DATA_DIR = DATA_PATH / "external"
 
-APP_DIR = PROJ_ROOT / 'wings' / 'app'
+APP_DIR = PROJ_ROOT / "wings" / "app"
 
-MODELS_DIR = PROJ_ROOT / 'models'
-MODELLING_DIR = PROJ_ROOT / 'wings' / 'modeling'
-TRAINING_DIR = MODELLING_DIR / 'training'
+MODELS_DIR = PROJ_ROOT / "models"
+MODELLING_DIR = PROJ_ROOT / "wings" / "modeling"
+TRAINING_DIR = MODELLING_DIR / "training"
 
-REPORTS_DIR = PROJ_ROOT / 'reports'
-FIGURES_DIR = PROJ_ROOT / 'figures'
+REPORTS_DIR = PROJ_ROOT / "reports"
+FIGURES_DIR = PROJ_ROOT / "figures"
 
-# COUNTRIES = ['AT','ES','GR','HR','HU','MD','ME','PL','PT','RO','RS','SI']
-COUNTRIES = ['AT', 'GR', 'HR', 'HU', 'MD', 'PL', 'RO', 'SI']
+# COUNTRIES = ["AT", "ES", "GR", "HR", "HU", "MD", "ME", "PL", "PT", "RO", "RS", "SI", "TR"]
+COUNTRIES = ["AT", "GR", "HR", "HU", "MD", "PL", "RO", "SI"]
 
-COORDS_SUFX = '-raw-coordinates.csv'
-IMG_FOLDER_SUFX = '-wing-images'
+COORDS_SUFX = "-raw-coordinates.csv"
+IMG_FOLDER_SUFX = "-wing-images"
 
-DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-logger.info(f"{torch.cuda.get_device_name()=}" if torch.cuda.is_available() else 'cpu')
-torch.set_float32_matmul_precision('high')
+DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+logger.info(f"{torch.cuda.get_device_name()=}" if torch.cuda.is_available() else "cpu")
+torch.set_float32_matmul_precision("high")
 
 
 SEED = 42
