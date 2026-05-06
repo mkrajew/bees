@@ -9,7 +9,11 @@ from lightning.pytorch.loggers import WandbLogger
 from wings.modeling.litnet import LitNet
 
 
-def train(model: torch.nn.Module, datasets: tuple[data.Dataset, data.Dataset, data.Dataset], params: dict) -> None:
+def train(
+    model: torch.nn.Module,
+    datasets: tuple[data.Dataset, data.Dataset, data.Dataset],
+    params: dict,
+) -> None:
     """
     Trains and evaluates a PyTorch model using the Lightning framework.
 
@@ -34,12 +38,14 @@ def train(model: torch.nn.Module, datasets: tuple[data.Dataset, data.Dataset, da
             - "criterion" (torch.nn.Module): Loss function to optimize.
     """
 
-    lit_net = LitNet(model, criterion=params["criterion"], num_epochs=params["num_epochs"])
+    lit_net = LitNet(
+        model, criterion=params["criterion"], num_epochs=params["num_epochs"]
+    )
 
     wandb_logger = WandbLogger(
         project=params["project_name"],
         save_dir=params["logger_save_dir"],
-        name=params["run_name"]
+        name=params["run_name"],
     )
 
     early_stop_callback = EarlyStopping(
@@ -47,7 +53,7 @@ def train(model: torch.nn.Module, datasets: tuple[data.Dataset, data.Dataset, da
         min_delta=params["early_stop_min_delta"],
         patience=params["early_stop_patience"],
         verbose=False,
-        mode="min"
+        mode="min",
     )
 
     checkpoint_callback = ModelCheckpoint(
@@ -62,29 +68,33 @@ def train(model: torch.nn.Module, datasets: tuple[data.Dataset, data.Dataset, da
         max_epochs=params["num_epochs"],
         logger=wandb_logger,
         callbacks=[early_stop_callback, RichProgressBar(), checkpoint_callback],
-        deterministic=True
+        deterministic=True,
     )
 
     train_dataset, val_dataset, test_dataset = datasets
+    use_persistent_workers = params["num_workers"] > 0
 
     train_dataloader = data.DataLoader(
         train_dataset,
         batch_size=params["batch_size"],
         num_workers=params["num_workers"],
+        persistent_workers=use_persistent_workers,
         shuffle=True,
-        drop_last=True
+        drop_last=True,
     )
     val_dataloader = data.DataLoader(
         val_dataset,
         batch_size=params["batch_size"],
         num_workers=params["num_workers"],
-        shuffle=False
+        persistent_workers=use_persistent_workers,
+        shuffle=False,
     )
     test_dataloader = data.DataLoader(
         test_dataset,
         batch_size=params["batch_size"],
         num_workers=params["num_workers"],
-        shuffle=False
+        persistent_workers=use_persistent_workers,
+        shuffle=False,
     )
 
     trainer.fit(lit_net, train_dataloader, val_dataloader)

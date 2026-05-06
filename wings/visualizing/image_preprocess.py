@@ -41,7 +41,9 @@ def resize_preprocess(img: torch.Tensor) -> torch.Tensor:
         Preprocessed image tensor ready for model input.
     """
 
-    img = F.resize(img, [224, 224], interpolation=F.InterpolationMode.BILINEAR, antialias=True)
+    img = F.resize(
+        img, [224, 224], interpolation=F.InterpolationMode.BILINEAR, antialias=True
+    )
     if not isinstance(img, torch.Tensor):
         img = F.pil_to_tensor(img)
     img = F.convert_image_dtype(img, torch.float)
@@ -59,27 +61,39 @@ def unet_preprocess(img: torch.Tensor) -> torch.Tensor:
     Returns:
         Preprocessed image tensor ready for U-Net model input.
     """
-    img = F.resize(img, [256, 256], interpolation=F.InterpolationMode.BILINEAR, antialias=False)
+    img = F.resize(
+        img, [256, 256], interpolation=F.InterpolationMode.BILINEAR, antialias=False
+    )
     img = F.convert_image_dtype(img, torch.float)
     m, s = img.mean(dim=(1, 2)), img.std(dim=(1, 2))
     img = F.normalize(img, mean=m, std=s)
     return img
 
 
-def unet_fit_rectangle_preprocess(img: torch.Tensor) -> tuple[torch.Tensor, int, int]:
-    img = F.resize(img, 255, interpolation=F.InterpolationMode.BILINEAR, antialias=True, max_size=256)
+def unet_fit_rectangle_preprocess(
+    img: torch.Tensor, output_size: int = 256
+) -> tuple[torch.Tensor, int, int]:
+    img = F.resize(
+        img,
+        output_size - 1,
+        interpolation=F.InterpolationMode.BILINEAR,
+        antialias=True,
+        max_size=output_size,
+    )
     _, h, w = img.shape
     if w >= h:
         pad_left = 0
-        pad_top = (256 - h) // 2
+        pad_top = (output_size - h) // 2
         pad_right = 0
-        pad_bottom = 256 - h - pad_top
+        pad_bottom = output_size - h - pad_top
     else:
-        pad_left = (256 - w) // 2
+        pad_left = (output_size - w) // 2
         pad_top = 0
-        pad_right = 256 - w - pad_left
+        pad_right = output_size - w - pad_left
         pad_bottom = 0
-    img = F.pad(img, [pad_left, pad_top, pad_right, pad_bottom], padding_mode='constant', fill=0)
+    img = F.pad(
+        img, [pad_left, pad_top, pad_right, pad_bottom], padding_mode="constant", fill=0
+    )
     img = F.convert_image_dtype(img, torch.float)
     m, s = img.mean(dim=(1, 2)), img.std(dim=(1, 2))
     img = F.normalize(img, mean=m, std=s)
@@ -140,7 +154,13 @@ def fit_rectangle_preprocess(img: torch.Tensor) -> tuple[torch.Tensor, int, int]
             - Number of pixels padded at the bottom.
     """
 
-    img = F.resize(img, 223, interpolation=F.InterpolationMode.BILINEAR, antialias=True, max_size=224)
+    img = F.resize(
+        img,
+        223,
+        interpolation=F.InterpolationMode.BILINEAR,
+        antialias=True,
+        max_size=224,
+    )
     _, h, w = img.shape
     if w >= h:
         pad_left = 0
@@ -152,7 +172,9 @@ def fit_rectangle_preprocess(img: torch.Tensor) -> tuple[torch.Tensor, int, int]
         pad_top = 0
         pad_right = 224 - w - pad_left
         pad_bottom = 0
-    img = F.pad(img, [pad_left, pad_top, pad_right, pad_bottom], padding_mode='constant', fill=0)
+    img = F.pad(
+        img, [pad_left, pad_top, pad_right, pad_bottom], padding_mode="constant", fill=0
+    )
     img = F.convert_image_dtype(img, torch.float)
     img = F.normalize(img, mean=mean, std=std)
 
@@ -169,35 +191,37 @@ def mask_to_coords(mask):
     coordinates = []
     for cnt in contours:
         M = cv2.moments(cnt)
-        if M['m00'] != 0:
-            cx = int(M['m10'] / M['m00'])  # x coordinate of centroid
-            cy = int(M['m01'] / M['m00'])  # y coordinate of centroid
+        if M["m00"] != 0:
+            cx = int(M["m10"] / M["m00"])  # x coordinate of centroid
+            cy = int(M["m01"] / M["m00"])  # y coordinate of centroid
             cy = img_y_size - cy - 1
             coordinates.append((cx, cy))
 
     return coordinates
 
 
-def unet_reverse_padding(padded_img: torch.Tensor, w_orig: int, h_orig: int) -> tuple[int, int, int, int]:
+def unet_reverse_padding(
+    padded_img: torch.Tensor, w_orig: int, h_orig: int
+) -> tuple[int, int, int, int]:
     """
     Reverses the padding added during unet_fit_rectangle_preprocess.
     Returns (pad_left, pad_top, pad_right, pad_bottom).
     Assumes the padded image is 256x256 and resizing used max_size=256 with max dim 255.
     """
     padded_h, padded_w = padded_img.shape
-    assert padded_h == 256 and padded_w == 256, "Expected padded image to be 256x256"
+    # assert padded_h == 256 and padded_w == 256, "Expected padded image to be 256x256"
 
     # Recompute resize scale from original dimensions
     if w_orig >= h_orig:
-        scale = 255 / w_orig
+        scale = (padded_h - 1) / w_orig
     else:
-        scale = 255 / h_orig
+        scale = (padded_h - 1) / h_orig
 
     resized_w = round(w_orig * scale)
     resized_h = round(h_orig * scale)
 
-    pad_w_total = 256 - resized_w
-    pad_h_total = 256 - resized_h
+    pad_w_total = padded_h - resized_w
+    pad_h_total = padded_h - resized_h
 
     pad_left = pad_w_total // 2
     pad_right = pad_w_total - pad_left
@@ -213,7 +237,9 @@ def final_coords(mask, orig_width, orig_height):
 
     mask_height, mask_width = mask.shape
 
-    pad_left, pad_top, pad_right, pad_bottom = unet_reverse_padding(mask, orig_width, orig_height)
+    pad_left, pad_top, pad_right, pad_bottom = unet_reverse_padding(
+        mask, orig_width, orig_height
+    )
 
     mask_coords = [(x - pad_left, y - pad_bottom) for x, y in mask_coords]
 
