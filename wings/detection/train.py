@@ -9,6 +9,7 @@ def main():
     data_yaml = PROCESSED_DATA_DIR / "detection" / "dataset.yaml"
 
     wandb.init(
+        entity="furkot-team",
         project="wings-detection",
         name="26n-run-1",
         config={
