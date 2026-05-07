@@ -305,3 +305,27 @@ def load_datasets(files: list[Path]) -> tuple[Dataset, Dataset, Dataset]:
     test_dataset = torch.load(files[2], weights_only=False)
 
     return train_dataset, val_dataset, test_dataset
+
+
+if __name__ == "__main__":
+    from functools import partial
+    from wings.visualizing.image_preprocess import unet_fit_rectangle_preprocess
+    from wings.config import COUNTRIES, PROCESSED_DATA_DIR
+
+    square_size = 3
+    preprocess = partial(unet_fit_rectangle_preprocess, output_size=400)
+
+    mask_dataset = MaskRectangleDataset(
+        COUNTRIES, PROCESSED_DATA_DIR / "cropped", preprocess, square_size=square_size
+    )
+
+    train_mask_dataset, val_mask_dataset, test_mask_dataset = mask_dataset.split(
+        0.2, 0.1
+    )
+
+    folder = PROCESSED_DATA_DIR / "mask_datasets" / "rectangle-cropped"
+    folder.mkdir(parents=True, exist_ok=True)
+
+    torch.save(train_mask_dataset, folder / "train_mask_dataset_ch1_400.pth")
+    torch.save(val_mask_dataset, folder / "val_mask_dataset_ch1_400.pth")
+    torch.save(test_mask_dataset, folder / "test_mask_dataset_ch1_400.pth")
