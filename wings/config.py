@@ -36,6 +36,10 @@ import numpy as np
 import torch
 from loguru import logger
 
+from dotenv import load_dotenv
+
+load_dotenv()
+
 PROJ_ROOT = Path(__file__).resolve().parents[1]
 logger.info(f"PROJ_ROOT path is: {PROJ_ROOT}")
 

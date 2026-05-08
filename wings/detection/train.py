@@ -1,6 +1,5 @@
 import wandb
 from ultralytics import YOLO
-from wandb.integration.ultralytics import add_wandb_callback
 
 from wings.config import PROCESSED_DATA_DIR, MODELS_DIR, SEED
 
@@ -31,19 +30,18 @@ def main():
 
     # Stage 1: train from pretrained model
     model = YOLO(MODELS_DIR / "yolo26n.pt")
-    add_wandb_callback(model, enable_model_checkpointing=True)
 
     model.train(
         data=data_yaml,
         epochs=25,
         patience=5,
-        batch=8,
+        batch=16,
         project="26n-train",
         name="run-1",
         device=0,
         seed=SEED,
         multi_scale=0.15,
-        profile=True,
+        profile=False,
         degrees=20,
         shear=10,
     )

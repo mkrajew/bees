@@ -25,6 +25,7 @@ dependencies = [
     "tqdm>=4.67.1",
     "ultralytics>=8.4.41",
     "wandb>=0.26.1",
+    "python-dotenv>=1.2.2",
 ]
 
 [[tool.uv.index]]
