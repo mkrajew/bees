@@ -13,7 +13,7 @@ from wings.modeling.train import train
 from wings.modeling.unet import UNet
 
 run_num = 1
-run_name = "unet-training-test"
+run_name = "unet-training"
 model_name = "custom-unet"
 PARAMETERS = {
     "project_name": "bees-wings-modeling3",
