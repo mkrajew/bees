@@ -10,7 +10,6 @@ from wings.dataset import load_datasets
 from wings.modeling.loss import DiceLoss
 from wings.modeling.train import train
 from wings.dataset import MaskRectangleDataset
-
 from wings.modeling.unet import UNet
 
 run_num = 1
