@@ -38,7 +38,7 @@ def main():
         epochs=25,
         patience=5,
         batch=16,
-        workers=8,
+        workers=4,
         project=project_name,
         name=run_name,
         device=0,

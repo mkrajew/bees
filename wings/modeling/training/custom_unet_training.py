@@ -25,7 +25,7 @@ PARAMETERS = {
     + f"{run_name}_{run_num}",
     "num_epochs": 100,
     "batch_size": 16,
-    "num_workers": 10,
+    "num_workers": 4,
     "early_stop_min_delta": 0.1,
     "early_stop_patience": 10,
     "criterion": DiceLoss(),
