@@ -20,7 +20,7 @@ import pandas as pd
 import torch
 import torch.utils.data as data
 from torch.utils.data import Dataset
-from torchvision.io import decode_image
+from torchvision.io import decode_image, ImageReadMode
 from tqdm import tqdm
 
 from wings.config import COORDS_SUFX, IMG_FOLDER_SUFX
@@ -93,7 +93,8 @@ class WingsDataset(data.Dataset):
 
         country = filename.split("-", 1)[0]
         image = decode_image(
-            str(self.data_folder / f"{country}{IMG_FOLDER_SUFX}" / filename)
+            str(self.data_folder / f"{country}{IMG_FOLDER_SUFX}" / filename),
+            mode=ImageReadMode.GRAY,
         )
         x_size, y_size = image.shape[2], image.shape[1]
         # image = image.repeat(3, 1, 1)

@@ -9,6 +9,7 @@ from wings.config import DEVICE, TRAINING_DIR, PROCESSED_DATA_DIR
 from wings.dataset import load_datasets
 from wings.modeling.loss import DiceLoss
 from wings.modeling.train import train
+from wings.dataset import MaskRectangleDataset
 
 from wings.modeling.unet import UNet
 
@@ -32,7 +33,7 @@ PARAMETERS = {
 }
 
 if __name__ == "__main__":
-    data_dir = PROCESSED_DATA_DIR / "mask_datasets" / "rectangle"
+    data_dir = PROCESSED_DATA_DIR / "mask_datasets" / "rectangle-cropped"
     train_val_test_datasets = load_datasets(
         [
             data_dir / "train_mask_dataset_ch1_400.pth",

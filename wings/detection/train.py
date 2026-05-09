@@ -1,16 +1,18 @@
+from wings.config import PROCESSED_DATA_DIR, MODELS_DIR, SEED, PROJ_ROOT
+
 import wandb
 from ultralytics import YOLO
-
-from wings.config import PROCESSED_DATA_DIR, MODELS_DIR, SEED
 
 
 def main():
     data_yaml = PROCESSED_DATA_DIR / "detection" / "dataset.yaml"
+    project_name = "26n-train"
+    run_name = "run-2"
 
     wandb.init(
         entity="furkot-team",
         project="wings-detection",
-        name="26n-run-1",
+        name=f"{project_name}-{run_name}",
         config={
             "model": "yolo26n.pt",
             "epochs_stage_1": 25,
@@ -36,8 +38,9 @@ def main():
         epochs=25,
         patience=5,
         batch=16,
-        project="26n-train",
-        name="run-1",
+        workers=8,
+        project=project_name,
+        name=run_name,
         device=0,
         seed=SEED,
         multi_scale=0.15,
@@ -47,14 +50,12 @@ def main():
     )
 
     model.train(
-        resume=True,
         epochs=35,
         degrees=10,
         shear=5,
     )
 
     model.train(
-        resume=True,
         epochs=40,
         degrees=5,
         shear=2,
