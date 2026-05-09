@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=wingai_yolo26n
+#SBATCH --job-name=wingai_unet
 #SBATCH --partition=gpu
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
