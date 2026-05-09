@@ -1,12 +1,12 @@
 #!/bin/bash
-#SBATCH --job-name=wingai_unet
+#SBATCH --job-name=unet
 #SBATCH --partition=gpu
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=24G
-#SBATCH --time=06:00:00
-#SBATCH --gres=gpu:1
+#SBATCH --time=24:00:00
+#SBATCH --gres=gpu:nvidia-11G:1
 #SBATCH --output=logs/%x_%j.out
 #SBATCH --error=logs/%x_%j.err
 

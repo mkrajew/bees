@@ -12,7 +12,7 @@ from wings.modeling.train import train
 from wings.dataset import MaskRectangleDataset
 from wings.modeling.unet import UNet
 
-run_num = 1
+run_num = 2
 run_name = "unet-training"
 model_name = "custom-unet"
 PARAMETERS = {
@@ -24,10 +24,10 @@ PARAMETERS = {
     + "-{epoch:02d}-{val_loss:.2f}-"
     + f"{run_name}_{run_num}",
     "num_epochs": 100,
-    "batch_size": 16,
-    "num_workers": 4,
+    "batch_size": 12,
+    "num_workers": 8,
     "early_stop_min_delta": 0.1,
-    "early_stop_patience": 10,
+    "early_stop_patience": 50,
     "criterion": DiceLoss(),
 }
 
