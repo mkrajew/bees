@@ -7,7 +7,7 @@ from ultralytics import YOLO
 def main():
     data_yaml = PROCESSED_DATA_DIR / "detection" / "dataset.yaml"
     project_name = "26n-train"
-    run_name = "run-2"
+    run_name = "run-3"
 
     wandb.init(
         entity="furkot-team",
@@ -31,11 +31,13 @@ def main():
     )
 
     # Stage 1: train from pretrained model
-    model = YOLO(MODELS_DIR / "yolo26n.pt")
+    # model = YOLO(MODELS_DIR / "yolo26n.pt")
+    model_folder = PROJ_ROOT / "wings" / "detection" / "runs" / project_name / run_name
+    model = YOLO(model_folder / "last.pt")
 
     model.train(
         data=data_yaml,
-        epochs=25,
+        epochs=16,
         patience=5,
         batch=16,
         workers=4,
@@ -47,20 +49,26 @@ def main():
         profile=False,
         degrees=20,
         shear=10,
+        resume=True,
     )
 
+    model = YOLO(model_folder / "last.pt")
     model.train(
-        epochs=35,
+        resume=True,
+        epochs=25,
         degrees=10,
         shear=5,
     )
 
+    model = YOLO(model_folder / "last.pt")
     model.train(
-        epochs=40,
+        resume=True,
+        epochs=30,
         degrees=5,
         shear=2,
     )
 
+    model = YOLO(model_folder / "best.pt")
     metrics = model.val(data=data_yaml)
 
     wandb.log(
