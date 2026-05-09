@@ -32,7 +32,9 @@ def main():
 
     # Stage 1: train from pretrained model
     # model = YOLO(MODELS_DIR / "yolo26n.pt")
-    model_folder = PROJ_ROOT / "wings" / "detection" / "runs" / project_name / run_name
+    model_folder = (
+        PROJ_ROOT / "wings" / "detection" / "runs" / "detect" / project_name / run_name
+    )
     model = YOLO(model_folder / "last.pt")
 
     model.train(
