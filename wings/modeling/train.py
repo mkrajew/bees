@@ -57,7 +57,8 @@ def train(
     )
 
     checkpoint_callback = ModelCheckpoint(
-        save_top_k=2,
+        save_top_k=1,
+        save_last=True,
         monitor="val_loss",
         mode="min",
         dirpath=params["checkpoint_save_dir"],
@@ -67,7 +68,8 @@ def train(
     trainer = L.Trainer(
         max_epochs=params["num_epochs"],
         logger=wandb_logger,
-        callbacks=[early_stop_callback, RichProgressBar(), checkpoint_callback],
+        # callbacks=[early_stop_callback, RichProgressBar(), checkpoint_callback],
+        callbacks=[early_stop_callback, checkpoint_callback],
         deterministic=True,
     )
 

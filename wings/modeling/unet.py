@@ -128,3 +128,71 @@ class UNet(nn.Module):
                 ]
             )
         )
+
+
+def inflate_3x3_to_5x5(w):
+    w5 = torch.zeros(
+        w.shape[0],
+        w.shape[1],
+        5,
+        5,
+        dtype=w.dtype,
+        device=w.device,
+    )
+    w5[:, :, 1:4, 1:4] = w
+    return w5
+
+
+def load_lightning_3x3_into_unet_5x5(model_5x5, checkpoint_path):
+    ckpt = torch.load(checkpoint_path, map_location="cpu")
+    old_state = ckpt["state_dict"]
+
+    new_model_state = model_5x5.state_dict()
+    converted_state = {}
+
+    loaded_direct = 0
+    inflated = 0
+    skipped = []
+
+    for key, value in old_state.items():
+        # Lightning checkpoint has "model." prefix
+        if key.startswith("model."):
+            key = key[len("model.") :]
+
+        if key not in new_model_state:
+            skipped.append((key, "not in new model"))
+            continue
+
+        target = new_model_state[key]
+
+        if value.shape == target.shape:
+            converted_state[key] = value
+            loaded_direct += 1
+
+        elif (
+            value.ndim == 4
+            and target.ndim == 4
+            and value.shape[:2] == target.shape[:2]
+            and value.shape[-2:] == (3, 3)
+            and target.shape[-2:] == (5, 5)
+        ):
+            converted_state[key] = inflate_3x3_to_5x5(value)
+            inflated += 1
+
+        else:
+            skipped.append((key, f"{tuple(value.shape)} -> {tuple(target.shape)}"))
+
+    missing, unexpected = model_5x5.load_state_dict(converted_state, strict=False)
+
+    print(f"Loaded directly: {loaded_direct}")
+    print(f"Inflated 3x3 -> 5x5: {inflated}")
+    print(f"Skipped: {len(skipped)}")
+    print(f"Missing: {len(missing)}")
+    print(f"Unexpected: {len(unexpected)}")
+
+    if skipped:
+        print("\nSkipped examples:")
+        for item in skipped[:20]:
+            print(item)
+
+    return model_5x5

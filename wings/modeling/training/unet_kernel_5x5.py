@@ -10,19 +10,19 @@ from wings.dataset import load_datasets
 from wings.modeling.loss import DiceLoss, WeightedDiceLoss
 from wings.modeling.train import train
 from wings.dataset import MaskRectangleDataset
-from wings.modeling.unet import UNet
+from wings.modeling.unet import UNet, load_lightning_3x3_into_unet_5x5
 
 run_num = 1
-run_name = "unet-400"
-model_name = "unet-400-from-pretrained"
+run_name = "kernel-5x5"
+model_name = "kernel-5x5"
 PARAMETERS = {
     "project_name": "wingai",
     "logger_save_dir": TRAINING_DIR,
-    "run_name": f"{run_name}_{run_num}",
+    "run_name": f"{run_name}-{run_num}",
     "checkpoint_save_dir": TRAINING_DIR / "lightning-checkpoints" / model_name,
     "checkpoint_filename": model_name
     + "-{epoch:02d}-{val_loss:.2f}-"
-    + f"{run_name}_{run_num}",
+    + f"{run_name}-{run_num}",
     "num_epochs": 100,
     "batch_size": 12,
     "num_workers": 8,
@@ -41,32 +41,16 @@ if __name__ == "__main__":
         ]
     )
     logger.info("Loaded datasets.")
-
-    model = UNet(in_channels=1, out_channels=1, kernel_size=3)
-
     checkpoint_path = (
         MODELS_DIR
-        / "unet-rectangle-epoch=08-val_loss=0.14-unet-training-rectangle_1.ckpt"
+        / "new_unet"
+        / "custom-unet-pretrained-epoch=49-val_loss=0.02-custom-unet-training_1.ckpt"
     )
-
-    checkpoint = torch.load(checkpoint_path, map_location=DEVICE)
-    state_dict = checkpoint["state_dict"]
-    new_state_dict = {}
-    for key, value in state_dict.items():
-        new_key = key
-        if new_key.startswith("model."):
-            new_key = new_key[len("model.") :]
-        new_state_dict[new_key] = value
-    state_dict = new_state_dict
-
-    weight_key = "encoder1.enc1conv1.weight"
-    if weight_key in state_dict:
-        old_weight = state_dict[weight_key]
-        if old_weight.shape[1] != 1:
-            new_weight = old_weight.mean(dim=1, keepdim=True)
-            state_dict[weight_key] = new_weight
-    model.load_state_dict(state_dict)
-
+    model = UNet(in_channels=1, out_channels=1, kernel_size=5)
+    model = load_lightning_3x3_into_unet_5x5(
+        model,
+        checkpoint_path,
+    )
     model.to(DEVICE)
 
     train(model, train_val_test_datasets, PARAMETERS)

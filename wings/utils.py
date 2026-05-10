@@ -28,7 +28,9 @@ def order_coords(predicted, original):
     return matched_predicted, matched_original
 
 
-def load_image(filepath: Path, preprocess_func: Callable[[torch.Tensor], Any]) -> tuple[torch.Tensor, int, int]:
+def load_image(
+    filepath: Path, preprocess_func: Callable[[torch.Tensor], Any]
+) -> tuple[torch.Tensor, int, int]:
     """
     Loads and preprocesses an image tensor.
 
@@ -40,7 +42,9 @@ def load_image(filepath: Path, preprocess_func: Callable[[torch.Tensor], Any]) -
         The image tensor.
     """
 
-    image = decode_image(str(filepath), mode=ImageReadMode.RGB, apply_exif_orientation=True)
+    image = decode_image(
+        str(filepath), mode=ImageReadMode.GRAY, apply_exif_orientation=True
+    )
     x_size, y_size = image.shape[2], image.shape[1]
     # if image.shape[0] == 1:
     #     image = image.repeat(3, 1, 1)
