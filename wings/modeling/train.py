@@ -2,7 +2,6 @@ import lightning as L
 import torch
 import torch.utils.data as data
 from lightning.pytorch.callbacks import ModelCheckpoint
-from lightning.pytorch.callbacks import RichProgressBar
 from lightning.pytorch.callbacks.early_stopping import EarlyStopping
 from lightning.pytorch.loggers import WandbLogger
 
