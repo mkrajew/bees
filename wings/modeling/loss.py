@@ -67,3 +67,27 @@ class IoULoss(nn.Module):
 
         iou = (intersection + self.smooth) / (union + self.smooth)
         return 1.0 - iou
+
+
+class BCEDiceLoss(nn.Module):
+    def __init__(self, pos_weight=50.0, dice_weight=0.5, bce_weight=0.5):
+        super().__init__()
+        self.bce = nn.BCEWithLogitsLoss(pos_weight=torch.tensor(pos_weight))
+        self.dice_weight = dice_weight
+        self.bce_weight = bce_weight
+
+    def forward(self, logits, targets):
+        targets = targets.float()
+
+        bce_loss = self.bce(logits, targets)
+
+        probs = torch.sigmoid(logits)
+
+        smooth = 1.0
+        intersection = (probs * targets).sum(dim=(1, 2, 3))
+        union = probs.sum(dim=(1, 2, 3)) + targets.sum(dim=(1, 2, 3))
+
+        dice_loss = 1.0 - ((2.0 * intersection + smooth) / (union + smooth))
+        dice_loss = dice_loss.mean()
+
+        return self.bce_weight * bce_loss + self.dice_weight * dice_loss

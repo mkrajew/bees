@@ -3,9 +3,10 @@ import torch
 import torch.utils.data as data
 from lightning.pytorch.callbacks import ModelCheckpoint
 from lightning.pytorch.callbacks.early_stopping import EarlyStopping
-from lightning.pytorch.loggers import WandbLogger
+from lightning.pytorch.loggers import WandbLogger, CSVLogger
 
 from wings.modeling.litnet import LitNet
+from wings.config import PROCESSED_DATA_DIR
 
 
 def train(
@@ -37,14 +38,28 @@ def train(
             - "criterion" (torch.nn.Module): Loss function to optimize.
     """
 
+    mean_coords = torch.load(
+        PROCESSED_DATA_DIR / "mask_datasets" / "rectangle" / "mean_shape.pth",
+        weights_only=False,
+    )
+
     lit_net = LitNet(
-        model, criterion=params["criterion"], num_epochs=params["num_epochs"]
+        model,
+        criterion=params["criterion"],
+        num_epochs=params["num_epochs"],
+        mean_coords=mean_coords,
     )
 
     wandb_logger = WandbLogger(
         project=params["project_name"],
         save_dir=params["logger_save_dir"],
         name=params["run_name"],
+    )
+
+    csv_logger = CSVLogger(
+        save_dir="logs",
+        name="csv_logs",
+        version=params["run_name"],
     )
 
     early_stop_callback = EarlyStopping(
@@ -66,7 +81,7 @@ def train(
 
     trainer = L.Trainer(
         max_epochs=params["num_epochs"],
-        logger=wandb_logger,
+        logger=[wandb_logger, csv_logger],
         # callbacks=[early_stop_callback, RichProgressBar(), checkpoint_callback],
         callbacks=[early_stop_callback, checkpoint_callback],
         deterministic=True,
