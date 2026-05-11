@@ -13,6 +13,7 @@ def train(
     model: torch.nn.Module,
     datasets: tuple[data.Dataset, data.Dataset, data.Dataset],
     params: dict,
+    path=None,
 ) -> None:
     """
     Trains and evaluates a PyTorch model using the Lightning framework.
@@ -44,6 +45,12 @@ def train(
     )
 
     lit_net = LitNet(
+        model,
+        criterion=params["criterion"],
+        num_epochs=params["num_epochs"],
+        mean_coords=mean_coords,
+    ) if path is None else lit_net = LitNet.load_from_checkpoint(
+        path,
         model,
         criterion=params["criterion"],
         num_epochs=params["num_epochs"],
