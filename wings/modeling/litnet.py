@@ -171,21 +171,24 @@ class LitNet(L.LightningModule):
 
     def configure_optimizers(self):
         optimizer = torch.optim.AdamW(
-            self.model.parameters(), lr=1e-3, weight_decay=1e-4
+            self.model.parameters(), lr=1e-5, weight_decay=1e-4
         )
         scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
             optimizer,
             mode="min",
             factor=0.5,
             patience=8,
-            min_lr=1e-6,
+            threshold=0.01,
+            threshold_mode="abs",
+            cooldown=2,
+            min_lr=1e-7,
         )
 
         return {
             "optimizer": optimizer,
             "lr_scheduler": {
                 "scheduler": scheduler,
-                "monitor": "val_loss",
+                "monitor": "val_mean_error_px",
                 "interval": "epoch",
                 "frequency": 1,
             },

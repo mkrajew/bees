@@ -63,7 +63,7 @@ def train(
     )
 
     early_stop_callback = EarlyStopping(
-        monitor="val_loss",
+        monitor="val_mean_error_px",
         min_delta=params["early_stop_min_delta"],
         patience=params["early_stop_patience"],
         verbose=False,
@@ -71,9 +71,9 @@ def train(
     )
 
     checkpoint_callback = ModelCheckpoint(
-        save_top_k=1,
+        save_top_k=2,
         save_last=True,
-        monitor="val_loss",
+        monitor="val_mean_error_px",
         mode="min",
         dirpath=params["checkpoint_save_dir"],
         filename=params["checkpoint_filename"],
