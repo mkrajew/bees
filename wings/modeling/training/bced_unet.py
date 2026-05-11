@@ -13,8 +13,8 @@ from wings.dataset import MaskRectangleDataset
 from wings.modeling.unet import UNet
 
 run_num = 1
-run_name = "weighted-bce-dice"
-model_name = "unet-400-bce-dice"
+run_name = "weighted-bce-dice-kernel-5x5"
+model_name = "unet-400-bce-dice-k-5"
 PARAMETERS = {
     "project_name": "wingai",
     "logger_save_dir": TRAINING_DIR,
@@ -42,9 +42,9 @@ if __name__ == "__main__":
     )
     logger.info("Loaded datasets.")
 
-    model = UNet(in_channels=1, out_channels=1, kernel_size=3, sigmoid=False)
+    model = UNet(in_channels=1, out_channels=1, kernel_size=5, sigmoid=False)
 
-    checkpoint_path = MODELS_DIR / "new_unet" / "last.ckpt"
+    checkpoint_path = MODELS_DIR / "new_unet" / "kernel5.ckpt"
 
     checkpoint = torch.load(checkpoint_path, map_location=DEVICE)
     state_dict = checkpoint["state_dict"]
