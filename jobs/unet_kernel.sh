@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=kernel-unet
+#SBATCH --job-name=kernel-unet-2
 #SBATCH --partition=gpu
 #SBATCH --nodes=1
 #SBATCH --ntasks=1

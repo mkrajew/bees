@@ -1,5 +1,5 @@
 """
-Training UNET with masks with square size 5.
+Training UNET with masks with square size 3.
 """
 
 import torch
@@ -7,14 +7,14 @@ from loguru import logger
 
 from wings.config import DEVICE, TRAINING_DIR, PROCESSED_DATA_DIR, MODELS_DIR
 from wings.dataset import load_datasets
-from wings.modeling.loss import DiceLoss, WeightedDiceLoss
+from wings.modeling.loss import DiceLoss, WeightedDiceLoss, BCEDiceLoss
 from wings.modeling.train import train
 from wings.dataset import MaskRectangleDataset
-from wings.modeling.unet import UNet, load_lightning_3x3_into_unet_5x5
+from wings.modeling.unet import UNet
 
-run_num = 1
-run_name = "kernel-5x5"
-model_name = "kernel-5x5"
+run_num = 2
+run_name = "weighted-bce-dice-kernel-5x5"
+model_name = "unet-400-bce-dice-k-5"
 PARAMETERS = {
     "project_name": "wingai",
     "logger_save_dir": TRAINING_DIR,
@@ -28,7 +28,7 @@ PARAMETERS = {
     "num_workers": 8,
     "early_stop_min_delta": 0.001,
     "early_stop_patience": 50,
-    "criterion": WeightedDiceLoss(landmark_weight=50.0, background_weight=1.0),
+    "criterion": BCEDiceLoss(pos_weight=50.0, dice_weight=0.8, bce_weight=0.2),
 }
 
 if __name__ == "__main__":
@@ -41,16 +41,22 @@ if __name__ == "__main__":
         ]
     )
     logger.info("Loaded datasets.")
-    checkpoint_path = (
-        MODELS_DIR
-        / "new_unet"
-        / "custom-unet-pretrained-epoch=49-val_loss=0.02-custom-unet-training_1.ckpt"
-    )
-    model = UNet(in_channels=1, out_channels=1, kernel_size=5)
-    model = load_lightning_3x3_into_unet_5x5(
-        model,
-        checkpoint_path,
-    )
+
+    model = UNet(in_channels=1, out_channels=1, kernel_size=5, sigmoid=False)
+
+    checkpoint_path = MODELS_DIR / "new_unet" / "kernel5.ckpt"
+
+    checkpoint = torch.load(checkpoint_path, map_location=DEVICE)
+    state_dict = checkpoint["state_dict"]
+
+    # Remove LightningModule prefix: "model."
+    state_dict = {
+        k.replace("model.", "", 1): v
+        for k, v in state_dict.items()
+        if k.startswith("model.")
+    }
+
+    model.load_state_dict(state_dict)
     model.to(DEVICE)
 
     train(model, train_val_test_datasets, PARAMETERS)
