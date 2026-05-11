@@ -44,18 +44,21 @@ def train(
         weights_only=False,
     )
 
-    lit_net = LitNet(
-        model,
-        criterion=params["criterion"],
-        num_epochs=params["num_epochs"],
-        mean_coords=mean_coords,
-    ) if path is None else lit_net = LitNet.load_from_checkpoint(
-        path,
-        model,
-        criterion=params["criterion"],
-        num_epochs=params["num_epochs"],
-        mean_coords=mean_coords,
-    )
+    if path is None:
+        lit_net = LitNet(
+            model,
+            criterion=params["criterion"],
+            num_epochs=params["num_epochs"],
+            mean_coords=mean_coords,
+        )
+    else:
+        lit_net = LitNet.load_from_checkpoint(
+            path,
+            model=model,
+            criterion=params["criterion"],
+            num_epochs=params["num_epochs"],
+            mean_coords=mean_coords,
+        )
 
     wandb_logger = WandbLogger(
         project=params["project_name"],

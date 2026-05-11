@@ -59,4 +59,4 @@ if __name__ == "__main__":
     # model.load_state_dict(state_dict)
     model.to(DEVICE)
 
-    train(model, train_val_test_datasets, PARAMETERS)
+    train(model, train_val_test_datasets, PARAMETERS, checkpoint_path)
