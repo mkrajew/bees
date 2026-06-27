@@ -192,8 +192,8 @@ def mask_to_coords(mask):
     for cnt in contours:
         M = cv2.moments(cnt)
         if M["m00"] != 0:
-            cx = int(M["m10"] / M["m00"])  # x coordinate of centroid
-            cy = int(M["m01"] / M["m00"])  # y coordinate of centroid
+            cx = M["m10"] / M["m00"]  # x coordinate of centroid
+            cy = M["m01"] / M["m00"]  # y coordinate of centroid
             cy = img_y_size - cy - 1
             coordinates.append((cx, cy))
 

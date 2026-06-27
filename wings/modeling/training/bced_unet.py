@@ -21,14 +21,14 @@ PARAMETERS = {
     "run_name": f"{run_name}-{run_num}",
     "checkpoint_save_dir": TRAINING_DIR / "lightning-checkpoints" / model_name,
     "checkpoint_filename": model_name
-    + "-{epoch:02d}-{val_loss:.2f}-"
+    + "-{epoch:02d}-{val_mean_error_px:.4f}-"
     + f"{run_name}-{run_num}",
     "num_epochs": 100,
     "batch_size": 12,
     "num_workers": 8,
     "early_stop_min_delta": 0.01,
     "early_stop_patience": 25,
-    "criterion": BCEDiceLoss(pos_weight=50.0, dice_weight=0.8, bce_weight=0.2),
+    "criterion": WeightedDiceLoss(landmark_weight=100),
 }
 
 if __name__ == "__main__":
