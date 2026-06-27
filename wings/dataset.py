@@ -313,7 +313,7 @@ if __name__ == "__main__":
     from wings.visualizing.image_preprocess import unet_fit_rectangle_preprocess
     from wings.config import COUNTRIES, PROCESSED_DATA_DIR
 
-    square_size = 3
+    square_size = 5
     preprocess = partial(unet_fit_rectangle_preprocess, output_size=400)
 
     mask_dataset = MaskRectangleDataset(
@@ -327,6 +327,6 @@ if __name__ == "__main__":
     folder = PROCESSED_DATA_DIR / "mask_datasets" / "rectangle-cropped"
     folder.mkdir(parents=True, exist_ok=True)
 
-    torch.save(train_mask_dataset, folder / "train_mask_dataset_ch1_400.pth")
-    torch.save(val_mask_dataset, folder / "val_mask_dataset_ch1_400.pth")
-    torch.save(test_mask_dataset, folder / "test_mask_dataset_ch1_400.pth")
+    torch.save(train_mask_dataset, folder / "train_mask_dataset_ch1_400_sq5.pth")
+    torch.save(val_mask_dataset, folder / "val_mask_dataset_ch1_400_sq5.pth")
+    torch.save(test_mask_dataset, folder / "test_mask_dataset_ch1_400_sq5.pth")
