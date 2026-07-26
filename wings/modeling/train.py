@@ -7,6 +7,7 @@ from lightning.pytorch.loggers import WandbLogger, CSVLogger
 
 from wings.modeling.litnet import LitNet
 from wings.config import PROCESSED_DATA_DIR
+from wings.transforms import seed_worker
 
 
 def train(
@@ -107,6 +108,7 @@ def train(
         persistent_workers=use_persistent_workers,
         shuffle=True,
         drop_last=True,
+        worker_init_fn=seed_worker if params["num_workers"] > 0 else None,
     )
     val_dataloader = data.DataLoader(
         val_dataset,
