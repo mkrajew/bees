@@ -2,7 +2,9 @@
 Online augmentation training -- config 1 (see jobs/online/README.md for the
 full comparison table across configs 1-4).
 
-Loss:       WeightedDiceLoss(landmark_weight=100)
+Loss:       WeightedDiceLoss(landmark_weight=100) -- note this loss does not apply
+            sigmoid internally (unlike BCEDiceLoss), so the model must be built
+            with sigmoid=True here, unlike configs 2/4.
 Augment:    rotation +/-90 deg, triangle noise 50% (80-120 triangles), color jitter 100% (0.5-1.5x)
             (horizontal_flip_p and triangle size left at TrainAugmentConfig's
             own defaults -- not overridden for this sweep)
@@ -61,7 +63,7 @@ if __name__ == "__main__":
     )
     logger.info("Built datasets.")
 
-    model = UNet(in_channels=1, out_channels=1, kernel_size=5, sigmoid=False)
+    model = UNet(in_channels=1, out_channels=1, kernel_size=5, sigmoid=True)
     model.to(DEVICE)
 
     checkpoint_path = MODELS_DIR / "new_unet" / "unet-final-k5.ckpt"

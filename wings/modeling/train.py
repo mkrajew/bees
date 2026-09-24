@@ -1,7 +1,7 @@
 import lightning as L
 import torch
 import torch.utils.data as data
-from lightning.pytorch.callbacks import ModelCheckpoint
+from lightning.pytorch.callbacks import ModelCheckpoint, LearningRateMonitor
 from lightning.pytorch.callbacks.early_stopping import EarlyStopping
 from lightning.pytorch.loggers import WandbLogger, CSVLogger
 
@@ -97,11 +97,13 @@ def train(
         filename=params["checkpoint_filename"],
     )
 
+    lr_monitor = LearningRateMonitor(logging_interval="epoch")
+
     trainer = L.Trainer(
         max_epochs=params["num_epochs"],
         logger=[wandb_logger, csv_logger],
         # callbacks=[early_stop_callback, RichProgressBar(), checkpoint_callback],
-        callbacks=[early_stop_callback, checkpoint_callback],
+        callbacks=[early_stop_callback, checkpoint_callback, lr_monitor],
         deterministic=True,
     )
 

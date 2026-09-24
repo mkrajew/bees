@@ -19,7 +19,20 @@ and a matching SLURM job (`jobs/online/unet_online_N.sh`).
 |---|---|---|
 | Class | `WeightedDiceLoss` | `BCEDiceLoss` |
 | Params | `landmark_weight=100` | `pos_weight=50, dice_weight=0.5, bce_weight=0.5` |
+| Model `sigmoid` | `True` | `False` |
 | Note | Current baseline loss | Same loss class `unet-final-k5.ckpt` was originally trained with |
+
+**Important:** `WeightedDiceLoss` (Loss A, configs 1/3) does not apply `sigmoid`
+internally -- it expects `y_pred` already in [0,1] -- while `BCEDiceLoss`
+(Loss B, configs 2/4) does (`probs = torch.sigmoid(logits)` plus
+`BCEWithLogitsLoss` for the BCE term, which itself requires raw logits). So
+`UNet(..., sigmoid=...)` must be built differently per config: `sigmoid=True`
+for configs 1/3, `sigmoid=False` for configs 2/4. Getting this wrong produces
+a mathematically invalid (out-of-\[0,1\]) Dice ratio -- a clear tell is a
+**negative** `train_loss`/`val_loss`, which is impossible for a correctly
+computed Dice loss and immediately signals this mismatch. (`DiceLoss` and
+`IoULoss` in `wings/modeling/loss.py` have the same no-internal-sigmoid
+behavior as `WeightedDiceLoss`, in case either is used in a future config.)
 
 ## Augmentation options
 
