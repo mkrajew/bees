@@ -57,19 +57,39 @@ range).
 - Wandb project: `wingai-online-augmentation` (separate from the other training
   scripts' shared `wingai` project), logs saved under
   `wings/modeling/training/online/`
-- SLURM resources: partition `gpu-m`, 1 node, 8 CPUs, 24G mem, 1x GPU (no
-  specific model pinned -- `--gres=gpu:1` lets Slurm schedule onto whatever's
-  free in `gpu-m`, e.g. a full `geforce_rtx_4090` or an `rtx_pro_6000_blackwell`
-  MIG slice), 12h walltime. `gpu-m` ("medium jobs, classic neural networks") is
-  the appropriate tier for this ~20M-param UNet -- it already trains fine on a
-  12GB laptop GPU, so `gpu-l` (reserved for large/VRAM-hungry models) would be
-  needlessly hogging a bigger card. Each config runs as its own single-GPU job
-  rather than distributing one config across multiple GPUs: the 4 configs are
-  independent experiments, so running them as 4 separate single-GPU jobs is
-  embarrassingly parallel with no cross-GPU communication overhead -- cheaper
-  and simpler than DDP-ing each one across multiple cards. If a job hits the
+- SLURM resources: partition `gpu-m`, 1 node, 8 CPUs, 24G mem, 1x
+  `geforce_rtx_4090` (pinned specifically -- see note below), 12h walltime.
+  `gpu-m` ("medium jobs, classic neural networks") is the appropriate tier for
+  this ~20M-param UNet -- it already trains fine on a 12GB laptop GPU, so
+  `gpu-l` (reserved for large/VRAM-hungry models) would be needlessly hogging a
+  bigger card. Each config runs as its own single-GPU job rather than
+  distributing one config across multiple GPUs: the 4 configs are independent
+  experiments, so running them as 4 separate single-GPU jobs is embarrassingly
+  parallel with no cross-GPU communication overhead -- cheaper and simpler
+  than DDP-ing each one across multiple cards. If a job hits the
   12h limit before finishing, `save_last=True` checkpointing (see `train.py`)
   means it can be resumed from its last checkpoint rather than restarting.
+
+**Why `geforce_rtx_4090` is pinned instead of a generic `--gres=gpu:1`:** an
+earlier run landed two configs on `h32` (`rtx_pro_6000_blackwell_max_1g`, MIG
+slices of a Blackwell card) and both crashed with `CUDA error: no kernel image
+is available for execution on the device` -- the cluster's installed
+`torch==2.14.0+cu126` only has compiled kernels up to compute capability 9.0,
+and Blackwell is 12.0. Only `glasser`'s RTX 4090s (Ada, compute capability
+8.9) are within the supported range, so jobs are pinned there until the
+cluster's torch/CUDA setup is upgraded to a build with Blackwell kernels
+(cu130+, per the error message's own suggestion). This means only 2 configs
+(matching `glasser`'s 2 physical cards) can actually run in parallel right
+now; the rest queue.
+
+**Why the job scripts use `uv sync` instead of `uv sync --reinstall`:**
+running multiple jobs concurrently against the same shared `.venv` in
+`~/bees`, each doing a full uninstall+reinstall of all 199 packages, caused a
+real race: one job's training script hit `ImportError: cannot import name
+'logger' from 'loguru'` because another job's concurrent `--reinstall` was
+mid-swap of that exact package. Plain `uv sync` is a fast no-op when the
+environment already matches `pyproject.toml`/`uv.lock`, so it doesn't
+destructively touch already-correct packages.
 
 ## Naming per config `N`
 

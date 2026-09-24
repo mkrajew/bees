@@ -11,7 +11,7 @@
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=24G
 #SBATCH --time=12:00:00
-#SBATCH --gres=gpu:1
+#SBATCH --gres=gpu:geforce_rtx_4090:1
 #SBATCH --output=logs/%x_%j.out
 #SBATCH --error=logs/%x_%j.err
 
@@ -22,11 +22,11 @@ echo "CUDA_VISIBLE_DEVICES=$CUDA_VISIBLE_DEVICES"
 
 nvidia-smi
 
-cd bees
+cd "$SLURM_SUBMIT_DIR"
 
 module load uv
 module load cuda/12.9
 
-uv sync --reinstall
+uv sync
 
 uv run wings/modeling/training/augmented_unet_3.py
