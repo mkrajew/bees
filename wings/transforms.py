@@ -3,9 +3,10 @@ Online (per-sample, per-epoch) augmentation for wing landmark training.
 
 Replaces the offline pipeline in `wings/detection/augment_dataset.py` (which baked
 one fixed rotated+noised copy per image onto disk) with transforms applied fresh on
-every dataset access. Geometric transforms (rotation) and the final resize/pad step
-move image and landmark keypoints together so they never drift out of sync; the two
-photometric transforms (triangle noise, color jitter) only ever touch the image.
+every dataset access. Geometric transforms (horizontal flip, rotation) and the final
+resize/pad step move image and landmark keypoints together so they never drift out
+of sync; the two photometric transforms (triangle noise, color jitter) only ever
+touch the image.
 
 Keypoints are handled in top-left (x, y) pixel convention throughout this module,
 matching the convention used internally by `augment_dataset.py`'s rotation logic.
@@ -138,6 +139,7 @@ class TrainAugmentConfig:
     """Reviewable knobs for training-time augmentation severity."""
 
     rotation_degrees: tuple[float, float] = (-90.0, 90.0)
+    horizontal_flip_p: float = 0.5
     triangle_noise_p: float = 0.4
     n_triangles_range: tuple[int, int] = (10, 60)
     triangle_min_size: int = 2
@@ -149,8 +151,9 @@ class TrainAugmentConfig:
 
 class _TrainTransform:
     """Callable(image, keypoints) -> (image, keypoints) with fresh randomness on
-    every call: random rotation, then (independently, each 40% of the time by
-    default) triangle noise and color jitter, then the deterministic resize+pad.
+    every call: random horizontal flip, then random rotation, then
+    (independently, each 40% of the time by default) triangle noise and color
+    jitter, then the deterministic resize+pad.
 
     A plain module-level class rather than a closure so instances stay picklable
     under Windows' `spawn`-based multiprocessing, which DataLoader workers need
@@ -158,10 +161,15 @@ class _TrainTransform:
     """
 
     def __init__(self, output_size: int, cfg: TrainAugmentConfig) -> None:
-        self.geometric = v2.RandomRotation(
-            degrees=cfg.rotation_degrees,
-            expand=True,
-            interpolation=v2.InterpolationMode.BILINEAR,
+        self.geometric = v2.Compose(
+            [
+                v2.RandomHorizontalFlip(p=cfg.horizontal_flip_p),
+                v2.RandomRotation(
+                    degrees=cfg.rotation_degrees,
+                    expand=True,
+                    interpolation=v2.InterpolationMode.BILINEAR,
+                ),
+            ]
         )
         self.photometric = v2.Compose(
             [
