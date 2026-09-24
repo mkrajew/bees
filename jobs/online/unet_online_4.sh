@@ -5,13 +5,13 @@
 # Augment: rotation +/-90 deg, triangle noise 80% (40-240 triangles), color jitter 100% (0.5-1.5x)
 # ==============================================================================
 #SBATCH --job-name=unet-online-k5-4
-#SBATCH --partition=gpu
+#SBATCH --partition=gpu-m
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=24G
-#SBATCH --time=24:00:00
-#SBATCH --gres=gpu:nvidia-11G:1
+#SBATCH --time=12:00:00
+#SBATCH --gres=gpu:1
 #SBATCH --output=logs/%x_%j.out
 #SBATCH --error=logs/%x_%j.err
 

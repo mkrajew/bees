@@ -57,7 +57,19 @@ range).
 - Wandb project: `wingai-online-augmentation` (separate from the other training
   scripts' shared `wingai` project), logs saved under
   `wings/modeling/training/online/`
-- SLURM resources: 1 node, 8 CPUs, 24G mem, 1x `nvidia-11G` GPU, 24h walltime
+- SLURM resources: partition `gpu-m`, 1 node, 8 CPUs, 24G mem, 1x GPU (no
+  specific model pinned -- `--gres=gpu:1` lets Slurm schedule onto whatever's
+  free in `gpu-m`, e.g. a full `geforce_rtx_4090` or an `rtx_pro_6000_blackwell`
+  MIG slice), 12h walltime. `gpu-m` ("medium jobs, classic neural networks") is
+  the appropriate tier for this ~20M-param UNet -- it already trains fine on a
+  12GB laptop GPU, so `gpu-l` (reserved for large/VRAM-hungry models) would be
+  needlessly hogging a bigger card. Each config runs as its own single-GPU job
+  rather than distributing one config across multiple GPUs: the 4 configs are
+  independent experiments, so running them as 4 separate single-GPU jobs is
+  embarrassingly parallel with no cross-GPU communication overhead -- cheaper
+  and simpler than DDP-ing each one across multiple cards. If a job hits the
+  12h limit before finishing, `save_last=True` checkpointing (see `train.py`)
+  means it can be resumed from its last checkpoint rather than restarting.
 
 ## Naming per config `N`
 
