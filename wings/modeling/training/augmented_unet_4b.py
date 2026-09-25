@@ -12,10 +12,12 @@ Augment:    same as config 4 ("Aug B"): rotation +/-90 deg, triangle noise 80%
             own defaults -- not overridden for this sweep)
 
 Model UNet(kernel_size=5), warm-started from config 4's own trained checkpoint
-(models/online/last.ckpt, copied down from the HPC's
-wings/modeling/training/lightning-checkpoints/unet-400-online-augmentation-k5-4/),
-not from unet-final-k5.ckpt like configs 1-4 -- this is a follow-up run on top
-of config 4's result, not a fresh comparison point.
+(wings/modeling/training/lightning-checkpoints/unet-400-online-augmentation-k5-4/last.ckpt,
+i.e. config 4's own save_last=True checkpoint on this same machine -- NOT
+models/online/last.ckpt, which is only a local copy of it for notebook use
+and won't exist on the HPC), not from unet-final-k5.ckpt like configs 1-4 --
+this is a follow-up run on top of config 4's result, not a fresh comparison
+point.
 
 Only the UNet weights are loaded from that checkpoint, manually, rather than
 going through train()'s usual LitNet.load_from_checkpoint(path, strict=False)
@@ -41,7 +43,7 @@ configs 1-4.
 import torch
 from loguru import logger
 
-from wings.config import DEVICE, TRAINING_DIR, PROCESSED_DATA_DIR, MODELS_DIR, COUNTRIES
+from wings.config import DEVICE, TRAINING_DIR, PROCESSED_DATA_DIR, COUNTRIES
 from wings.dataset import build_mask_datasets
 from wings.modeling.loss import BCEDiceLoss
 from wings.modeling.train import train
@@ -90,7 +92,9 @@ if __name__ == "__main__":
 
     # Warm-start UNet weights only from config 4's own trained checkpoint --
     # see module docstring for why the criterion must NOT be loaded from it.
-    checkpoint_path = MODELS_DIR / "online" / "last.ckpt"
+    checkpoint_path = (
+        TRAINING_DIR / "lightning-checkpoints" / "unet-400-online-augmentation-k5-4" / "last.ckpt"
+    )
     checkpoint = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
     model_state = {
         key[len("model."):]: value

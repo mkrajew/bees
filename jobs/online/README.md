@@ -67,7 +67,7 @@ on top of that result, instead of restarting the loss/augmentation grid:
 |---|---|---|
 | Loss | `BCEDiceLoss(pos_weight=50, dice_weight=0.5, bce_weight=0.5)` | `BCEDiceLoss(pos_weight=25, dice_weight=0.5, bce_weight=0.5)` |
 | Augmentation | Aug B | Aug B (unchanged) |
-| Warm-start | `models/new_unet/unet-final-k5.ckpt` | Config 4's own trained checkpoint, `models/online/last.ckpt` |
+| Warm-start | `models/new_unet/unet-final-k5.ckpt` | Config 4's own checkpoint, `wings/modeling/training/lightning-checkpoints/unet-400-online-augmentation-k5-4/last.ckpt` |
 
 `pos_weight` trades off precision vs. recall in `BCEWithLogitsLoss` (higher
 values push harder for recall at the cost of precision on the very sparse
@@ -84,13 +84,14 @@ submodule at all). Config 4b reuses the exact same criterion *class*
 (`BCEDiceLoss`) with a different `pos_weight`, so the key
 `criterion.bce.pos_weight` exists on **both** sides -- and `strict` does not
 guard against a matching key's value being overwritten by the checkpoint's
-stored one. Verified directly: loading `last.ckpt` the normal way into a
-freshly built `BCEDiceLoss(pos_weight=25)` leaves it holding `pos_weight=50`
-straight after loading, silently discarding the whole point of config 4b.
-`wings/modeling/training/augmented_unet_4b.py` avoids this by extracting only
-the `model.`-prefixed keys from `last.ckpt`'s state dict, loading those into a
-plain `UNet` directly, and calling `train(..., path=None)` so `LitNet` is
-built fresh around the (untouched) config 4b criterion.
+stored one. Verified directly: loading config 4's `last.ckpt` the normal way
+into a freshly built `BCEDiceLoss(pos_weight=25)` leaves it holding
+`pos_weight=50` straight after loading, silently discarding the whole point
+of config 4b. `wings/modeling/training/augmented_unet_4b.py` avoids this by
+extracting only the `model.`-prefixed keys from that checkpoint's state
+dict, loading those into a plain `UNet` directly, and calling
+`train(..., path=None)` so `LitNet` is built fresh around the (untouched)
+config 4b criterion.
 
 If a future config needs to warm-start from another config's own checkpoint
 *and* change something inside a shared submodule (not just the top-level
