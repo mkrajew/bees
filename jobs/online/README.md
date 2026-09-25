@@ -2,6 +2,8 @@
 
 Four configs comparing 2 loss functions x 2 augmentation-strength presets, all
 warm-started from the same checkpoint so only the loss/augmentation axes vary.
+Config 4b is a follow-up on top of config 4's own result (see below) rather
+than a fifth point in this grid.
 
 | Config | Loss | Augmentation |
 |---|---|---|
@@ -54,6 +56,45 @@ defaults (`triangle_noise_p=0.4`, `n_triangles_range=(10, 60)`,
 `color_jitter_p=0.4`, `color_jitter_brightness/contrast_range=(0.7, 1.3)`); B is
 the stronger of the two (higher noise probability and a much wider triangle-count
 range).
+
+## Follow-up: config 4b
+
+Config 4 (Loss B, Aug B) performed best of the 4 but plateaued rather than
+still improving at the early-stop point. Config 4b tries a lower `pos_weight`
+on top of that result, instead of restarting the loss/augmentation grid:
+
+| | Config 4 | Config 4b |
+|---|---|---|
+| Loss | `BCEDiceLoss(pos_weight=50, dice_weight=0.5, bce_weight=0.5)` | `BCEDiceLoss(pos_weight=25, dice_weight=0.5, bce_weight=0.5)` |
+| Augmentation | Aug B | Aug B (unchanged) |
+| Warm-start | `models/new_unet/unet-final-k5.ckpt` | Config 4's own trained checkpoint, `models/online/last.ckpt` |
+
+`pos_weight` trades off precision vs. recall in `BCEWithLogitsLoss` (higher
+values push harder for recall at the cost of precision on the very sparse
+landmark pixels); config 4's run showed `val_precision=0.75` / `val_recall=0.91`
+-- halving `pos_weight` is a first, cheap step to see if that imbalance
+narrows without giving up too much recall.
+
+**Warm-start gotcha -- only the UNet weights are loaded, not the full
+checkpoint:** configs 1-4 warm-start via `train(..., path=checkpoint,
+strict=False)`, which loads the *entire* saved `LitNet` state, including the
+criterion's own buffers. That's fine there because `strict=False` only papers
+over missing/unexpected keys (e.g. `WeightedDiceLoss` has no `.bce`
+submodule at all). Config 4b reuses the exact same criterion *class*
+(`BCEDiceLoss`) with a different `pos_weight`, so the key
+`criterion.bce.pos_weight` exists on **both** sides -- and `strict` does not
+guard against a matching key's value being overwritten by the checkpoint's
+stored one. Verified directly: loading `last.ckpt` the normal way into a
+freshly built `BCEDiceLoss(pos_weight=25)` leaves it holding `pos_weight=50`
+straight after loading, silently discarding the whole point of config 4b.
+`wings/modeling/training/augmented_unet_4b.py` avoids this by extracting only
+the `model.`-prefixed keys from `last.ckpt`'s state dict, loading those into a
+plain `UNet` directly, and calling `train(..., path=None)` so `LitNet` is
+built fresh around the (untouched) config 4b criterion.
+
+If a future config needs to warm-start from another config's own checkpoint
+*and* change something inside a shared submodule (not just the top-level
+loss class), check for this same gotcha first.
 
 ## Held constant across all 4 configs
 
@@ -112,6 +153,9 @@ destructively touch already-correct packages.
   `wings/modeling/training/lightning-checkpoints/unet-400-online-augmentation-k5-N/`,
   named `unet-400-online-augmentation-k5-N-{epoch:02d}-{val_mean_error_px:.4f}-online-augmentation-k5-N.ckpt`
 
+Same pattern for config 4b (`N` = `"4b"`, e.g.
+`unet-400-online-augmentation-k5-4b`).
+
 ## Adding more configs later
 
 Copy the highest-numbered `augmented_unet_N.py` and `unet_online_N.sh` to
@@ -119,3 +163,10 @@ Copy the highest-numbered `augmented_unet_N.py` and `unet_online_N.sh` to
 `TRAIN_AUGMENT_CONFIG` as needed, and add a row to this file. Keep whatever
 you're not deliberately testing identical to an existing config so the
 comparison stays interpretable.
+
+For a follow-up on top of a specific config's own result (like 4b), instead
+copy that config's files, point the warm-start at its checkpoint instead of
+`unet-final-k5.ckpt`, and check the warm-start gotcha above before assuming
+`train(..., path=checkpoint, strict=False)` is still safe -- it only is when
+nothing you're changing lives inside a submodule (e.g. the criterion) whose
+key names are unchanged from the checkpoint you're loading.
