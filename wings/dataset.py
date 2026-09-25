@@ -244,6 +244,32 @@ def generate_landmark_mask(
     return torch.from_numpy(mask).unsqueeze(0)
 
 
+def generate_circular_landmark_mask(
+    image: torch.Tensor, labels: torch.Tensor, square_size: int
+) -> torch.Tensor:
+    """Paints a filled circle of diameter ~`square_size` around each landmark,
+    instead of `generate_landmark_mask`'s square -- same signature/label
+    convention (bottom-left, flat x0,y0,x1,y1,...), only the drawn shape
+    differs. `square_size` keeps its name for drop-in compatibility with
+    `generate_landmark_mask` (both take the same knob; radius = square_size // 2).
+    """
+    x_coords, y_coords = labels[::2].int(), labels[1::2].int()
+    x_size, y_size = image.shape[2], image.shape[1]
+    assert x_size == y_size, f"Expected square image, got {x_size=} {y_size=}"
+    img_size = x_size
+
+    y_coords = y_size - y_coords - 1
+
+    mask = np.zeros((img_size, img_size), dtype=np.float32)
+    radius_sq = (square_size // 2) ** 2
+    y_grid, x_grid = np.ogrid[:img_size, :img_size]
+    for x, y in zip(x_coords.tolist(), y_coords.tolist()):
+        circle = (x_grid - x) ** 2 + (y_grid - y) ** 2 <= radius_sq
+        mask[circle] = 1
+
+    return torch.from_numpy(mask).unsqueeze(0)
+
+
 class MasksDataset(WingsDataset):
     def __init__(
         self,
@@ -271,22 +297,7 @@ class MasksDataset(WingsDataset):
     def generate_circular_mask(
         self, image: torch.Tensor, labels: torch.Tensor
     ) -> torch.Tensor:
-        x_coords, y_coords = labels[::2].int(), labels[1::2].int()
-        x_size, y_size = image.shape[2], image.shape[1]
-        assert x_size == y_size, f"Expected square image, got {x_size=} {y_size=}"
-        img_size = x_size
-
-        y_coords = y_size - y_coords - 1
-
-        mask = np.zeros((img_size, img_size), dtype=np.float32)
-        radius = self.square_size // 2
-        radius_sq = radius**2
-        y_grid, x_grid = np.ogrid[:img_size, :img_size]
-        for x, y in zip(x_coords.tolist(), y_coords.tolist()):
-            circle = (x_grid - x) ** 2 + (y_grid - y) ** 2 <= radius_sq
-            mask[circle] = 1
-
-        return torch.from_numpy(mask).unsqueeze(0)
+        return generate_circular_landmark_mask(image, labels, self.square_size)
 
 
 class MaskRectangleDataset(MasksDataset, WingsDatasetRectangleImages):
@@ -373,6 +384,11 @@ class TransformedMaskDataset(Dataset):
     built from the same underlying raw dataset (see `build_mask_datasets`): pass a
     random `wings.transforms.build_train_transform(...)` for training or the
     deterministic `wings.transforms.build_eval_transform(...)` for val/test.
+
+    mask_fn: which landmark-mask shape to paint -- `generate_landmark_mask`
+    (square, the default) or `generate_circular_landmark_mask` (circle), both
+    module-level functions above sharing the same (image, labels, square_size)
+    signature, so any callable matching it works here.
     """
 
     def __init__(
@@ -380,10 +396,12 @@ class TransformedMaskDataset(Dataset):
         base: Dataset,
         transform: Callable[[torch.Tensor, torch.Tensor], tuple[torch.Tensor, torch.Tensor]],
         square_size: int = 5,
+        mask_fn: Callable[[torch.Tensor, torch.Tensor, int], torch.Tensor] = generate_landmark_mask,
     ) -> None:
         self.base = base
         self.transform = transform
         self.square_size = square_size
+        self.mask_fn = mask_fn
 
     def __len__(self) -> int:
         return len(self.base)
@@ -410,7 +428,7 @@ class TransformedMaskDataset(Dataset):
         final_labels[::2] = transformed_keypoints[:, 0]
         final_labels[1::2] = final_size - transformed_keypoints[:, 1] - 1
 
-        mask = generate_landmark_mask(transformed_image, final_labels, self.square_size)
+        mask = self.mask_fn(transformed_image, final_labels, self.square_size)
 
         return transformed_image, mask, orig_label, orig_size
 
@@ -424,12 +442,16 @@ def build_mask_datasets(
     test_percentage: float = 0.1,
     split_seed: int = 42,
     train_augment_cfg: TrainAugmentConfig | None = None,
+    mask_fn: Callable[[torch.Tensor, torch.Tensor, int], torch.Tensor] = generate_landmark_mask,
 ) -> tuple[Dataset, Dataset, Dataset]:
     """Builds train/val/test mask datasets that share one raw image/label source
     but each apply a different transform: fresh random augmentation for train, and
     the deterministic `unet_fit_rectangle_preprocess`-equivalent transform for
     val/test. Replaces `load_datasets(...)` for training runs that want online
     augmentation instead of loading pre-augmented, pre-pickled dataset files.
+
+    mask_fn: see `TransformedMaskDataset` -- `generate_landmark_mask` (square,
+    default) or `generate_circular_landmark_mask` (circle).
     """
     raw = WingsRawDataset(countries, data_folder)
     train_idx, val_idx, test_idx = raw.split(val_percentage, test_percentage, seed=split_seed)
@@ -437,9 +459,9 @@ def build_mask_datasets(
     train_transform = build_train_transform(output_size, train_augment_cfg)
     eval_transform = build_eval_transform(output_size)
 
-    train_set = TransformedMaskDataset(train_idx, train_transform, square_size)
-    val_set = TransformedMaskDataset(val_idx, eval_transform, square_size)
-    test_set = TransformedMaskDataset(test_idx, eval_transform, square_size)
+    train_set = TransformedMaskDataset(train_idx, train_transform, square_size, mask_fn)
+    val_set = TransformedMaskDataset(val_idx, eval_transform, square_size, mask_fn)
+    test_set = TransformedMaskDataset(test_idx, eval_transform, square_size, mask_fn)
 
     return train_set, val_set, test_set
 

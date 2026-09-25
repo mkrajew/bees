@@ -2,8 +2,8 @@
 
 Four configs comparing 2 loss functions x 2 augmentation-strength presets, all
 warm-started from the same checkpoint so only the loss/augmentation axes vary.
-Config 4b is a follow-up on top of config 4's own result (see below) rather
-than a fifth point in this grid.
+Configs 4b, 4c and 4d are follow-ups on top of config 4's own result (see
+below) rather than further points in this grid.
 
 | Config | Loss | Augmentation |
 |---|---|---|
@@ -97,6 +97,96 @@ If a future config needs to warm-start from another config's own checkpoint
 *and* change something inside a shared submodule (not just the top-level
 loss class), check for this same gotcha first.
 
+## Follow-up: config 4c
+
+Config 4b's `pos_weight` change barely moved `val_mean_error_px` (~2.3px for
+config 4 vs ~2.4px for 4b), even after a `ReduceLROnPlateau` cut -- but a
+direct re-measurement of `unet-final-k5.ckpt` (the pre-online-augmentation
+checkpoint every config here warm-starts from) using today's exact
+evaluation code, on the same val split, told a bigger story than either:
+
+| | `unet-final-k5.ckpt` (old) | Config 4 | Config 4b |
+|---|---|---|---|
+| `val_dice` | 0.576 | 0.824 | 0.837 |
+| `val_wrong_spot_count_pct` | 0.99% | 9.46% | 5.89% |
+| `val_mean_error_px` | 1.383 | 2.297 | 2.375 |
+| `val_median_error_px` | 1.312 | 2.200 | 2.291 |
+
+The old model has *much lower* Dice but *much better* landmark position
+accuracy and point-count reliability -- the opposite of what you'd expect if
+Dice tracked landmark quality. The explanation traces to a variable nobody
+had touched: **`unet-final-k5.ckpt` was originally trained with mask
+`square_size=3`** (confirmed by inspecting `notebooks/04_save_datasets.ipynb`
+and the commit that produced it), while every online-augmentation config so
+far (1-4, 4b) uses `square_size=5`. A larger mask target lets the model get
+away with larger, more diffuse predicted blobs: still decent Dice (rewards
+covering more of a bigger target region), but a less precisely centered
+`cv2.moments` centroid, and more likely to bleed into a neighboring
+landmark's blob (hence 4/4b's much higher `wrong_spot_count_pct`). Dice
+between `square_size=3` and `square_size=5` targets isn't directly
+comparable at all -- the smaller target is inherently more sensitive to a
+1px boundary error, so a *sharper, more accurate* model can legitimately
+score *lower* on it. `val_mean_error_px` itself doesn't depend on
+`square_size` (it compares the predicted blob centroid straight to the raw
+ground-truth coordinate, never touching the mask target), so the 1.38 vs.
+2.3-2.4px gap is not an artifact of that mismatch -- it's the real,
+comparable number, and it's what config 4c tests.
+
+Config 4c changes **only** `square_size` (5 -> 3) relative to config 4 --
+same loss, same `pos_weight=50`, same augmentation, same warm-start source
+(`unet-final-k5.ckpt`, not config 4b's checkpoint, since 4b already
+introduced pos_weight as a second variable and unet-final-k5.ckpt is itself
+square_size=3-native) -- to isolate this one variable instead of conflating
+it with 4b's `pos_weight` change:
+
+| | Config 4 | Config 4c |
+|---|---|---|
+| Loss | `BCEDiceLoss(pos_weight=50, dice_weight=0.5, bce_weight=0.5)` | same |
+| Augmentation | Aug B | same |
+| Mask `square_size` | 5 | **3** |
+| Warm-start | `models/new_unet/unet-final-k5.ckpt` | same |
+
+No warm-start gotcha here (unlike 4b): `unet-final-k5.ckpt`'s own saved
+criterion is `BCEDiceLoss(pos_weight=50, ...)` -- confirmed directly from its
+state dict -- an exact match to config 4c's, so the standard
+`train(..., path=checkpoint, strict=False)` pattern (same as configs 1-4) is
+safe as-is.
+
+## Follow-up: config 4d
+
+A second, complementary test of the same underlying idea as 4c: instead of
+changing the mask target's *size* (square_size 5 -> 3), config 4d changes its
+*shape* -- circular instead of square, via the new
+`generate_circular_landmark_mask` (`wings/dataset.py`), holding `square_size`
+at 5 (so the circle's radius is `square_size // 2 = 2`, same as 4/4b's
+square). A circle has no corners -- the pixels farthest from the true
+landmark center, and the cheapest ones for a model to "cover" for Dice credit
+without actually sharpening its localization -- and measurably less area at
+the same nominal size (13 vs. 25 px/landmark, verified directly). If config
+4/4b's diffuse blobs are partly the model exploiting those corners rather
+than the raw target area, a circular target should push toward smaller,
+better-centered blobs somewhat like 4c's smaller square, without touching the
+"size" knob at all. Running 4c and 4d side by side tells apart whether it's
+target *area*, target *shape* (corners), or both, that drove the gap in the
+4c table above.
+
+| | Config 4 | Config 4c | Config 4d |
+|---|---|---|---|
+| Loss | `BCEDiceLoss(pos_weight=50, dice_weight=0.5, bce_weight=0.5)` | same | same |
+| Augmentation | Aug B | same | same |
+| Mask shape | square | square | **circle** |
+| Mask `square_size` | 5 | **3** | 5 (radius 2) |
+| Warm-start | `models/new_unet/unet-final-k5.ckpt` | same | same |
+
+`generate_circular_landmark_mask` is a drop-in for `generate_landmark_mask`
+(same `(image, labels, square_size)` signature); `TransformedMaskDataset` and
+`build_mask_datasets` both take a `mask_fn` parameter selecting between them
+(default stays `generate_landmark_mask`, so configs 1-4/4b/4c are unaffected).
+No evaluation-side changes needed: `val_mean_error_px`/`wrong_spot_count_pct`
+are computed from the model's *predicted* mask's contours regardless of what
+shape the *training target* used, so whichever shape the model learns to
+predict is picked up automatically.
+
 ## Held constant across all 4 configs
 
 - Model: `UNet(in_channels=1, out_channels=1, kernel_size=5, sigmoid=False)`
@@ -105,7 +195,8 @@ loss class), check for this same gotcha first.
   config's criterion here -- e.g. `BCEDiceLoss`'s `pos_weight` buffer isn't
   present in `WeightedDiceLoss` -- so that mismatched key is ignored while the
   actual UNet weights still load exactly; verified for both loss classes)
-- Mask square size: 5
+- Mask shape/size: square, `square_size=5` (config 4c changes size to 3,
+  config 4d changes shape to circle -- see above)
 - `num_epochs=100`, `batch_size=12`, `num_workers=8`
 - `early_stop_patience=25`, `early_stop_min_delta=0.01` (monitor: `val_mean_error_px`)
 - Data source: `data/processed/cropped/` (plain YOLO-cropped, no offline augmentation)
@@ -154,8 +245,8 @@ destructively touch already-correct packages.
   `wings/modeling/training/lightning-checkpoints/unet-400-online-augmentation-k5-N/`,
   named `unet-400-online-augmentation-k5-N-{epoch:02d}-{val_mean_error_px:.4f}-online-augmentation-k5-N.ckpt`
 
-Same pattern for config 4b (`N` = `"4b"`, e.g.
-`unet-400-online-augmentation-k5-4b`).
+Same pattern for configs 4b/4c/4d (`N` = `"4b"`/`"4c"`/`"4d"`, e.g.
+`unet-400-online-augmentation-k5-4d`).
 
 ## Adding more configs later
 
