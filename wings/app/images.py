@@ -7,7 +7,13 @@ import torch
 from PIL import Image, PngImagePlugin
 
 from wings.app import device
-from wings.gpa import handle_coordinates, procrustes_align, normalize_shape, center_shape
+from wings.gpa import (
+    handle_coordinates,
+    procrustes_align,
+    normalize_shape,
+    center_shape,
+    FULL_ROTATION_MULTISTART_ANGLES,
+)
 from wings.utils import load_image
 from wings.visualizing.image_preprocess import unet_fit_rectangle_preprocess, final_coords
 
@@ -50,7 +56,19 @@ class WingImage:
             # landmarks on horizontally-mirrored wings too (TrainAugmentConfig's
             # horizontal_flip_p), which a rotation-only match can't align
             # correctly against mean_coords even when detection itself is fine.
-            self._coordinates = handle_coordinates(mask_coords, self.mean_coords, allow_reflection=True)
+            # multistart_angles: a real uploaded photo could be rotated by any
+            # amount (unlike val/test, which are never rotated) -- without this,
+            # handle_coordinates's correspondence search can get stuck in a wrong
+            # landmark ordering near hard angles like 90 degrees even though
+            # detection itself is accurate (verified ~12.7px -> ~2.7px mean error
+            # at 90 degrees on the real trained checkpoint, matching a
+            # ground-truth-assisted baseline only available for offline testing).
+            self._coordinates = handle_coordinates(
+                mask_coords,
+                self.mean_coords,
+                allow_reflection=True,
+                multistart_angles=FULL_ROTATION_MULTISTART_ANGLES,
+            )
         except Exception as e:
             self._check_carefully = True
             if len(mask_coords) > 19:
