@@ -16,15 +16,25 @@ def normalize_shape(x):
     return x / torch.norm(x)
 
 
-def procrustes_align(x, y, only_matrix=False):
+def procrustes_align(x, y, only_matrix=False, allow_reflection=False):
     """
     Aligns shape X to shape Y by rotation (Procrustes alignment).
     Assumes both shapes are already centered and normalized.
     Uses SVD.
+
+    allow_reflection: if False (default, backward compatible), a det(r)<0
+        solution (a reflection) is corrected back to the nearest pure
+        rotation -- this is what you want when computing/aligning to the
+        mean shape itself, where every input is known to share the same
+        chirality. If True, the uncorrected SVD-optimal orthogonal alignment
+        is used instead, which may include a reflection when that fits
+        better -- needed wherever the shape being aligned could legitimately
+        be mirrored (e.g. matching a prediction from a horizontally-flipped
+        image against mean_coords).
     """
     u, _, vt = torch.linalg.svd(x.T @ y)
     r = u @ vt
-    if torch.det(r) < 0:
+    if not allow_reflection and torch.det(r) < 0:
         # det(r)<0 means that it is a flip, not a rotation
         u[:, -1] *= -1
         r = u @ vt
@@ -83,20 +93,12 @@ def solve_assignment(cost_matrix):
     return idx
 
 
-def recover_order(mean_shape, unordered_shape, max_iter=5, device=torch.device("cpu")):
-    """
-    mean_shape: torch tensor (n_points, 2)
-    unordered_shape: torch tensor (n_points, 2) - same points but random order/transform
-    Returns:
-        reordered_shape: torch tensor (n_points, 2) = unordered_shape[perm_idx]
-    """
-    mean = mean_shape.to(device).float()
-    s = unordered_shape.to(device).float()
-    assert s.shape[0] == mean.shape[0] and mean.shape[1] == 2
-
-    mean_torch = normalize_shape(center_shape(mean))
-    shapes_torch = normalize_shape(center_shape(s))
-
+def _recover_order_index(mean_torch, shapes_torch, max_iter, device, allow_reflection):
+    """Runs the iterative nearest-assignment + Procrustes-realign loop from a
+    given starting point-cloud orientation (mean_torch/shapes_torch already
+    centered+normalized). Returns (index, residual), where residual is the
+    final alignment error -- used by recover_order to compare candidate
+    starting orientations when allow_reflection is set."""
     mean_temp = mean_torch.cpu().numpy()
     shapes_temp = shapes_torch.cpu().numpy()
 
@@ -107,7 +109,7 @@ def recover_order(mean_shape, unordered_shape, max_iter=5, device=torch.device("
         perm = torch.tensor(index, dtype=torch.long, device=device)
         s_perm = shapes_torch[perm]
 
-        r = procrustes_align(s_perm, mean_torch, only_matrix=True)
+        r = procrustes_align(s_perm, mean_torch, only_matrix=True, allow_reflection=allow_reflection)
         s_rot = shapes_torch @ r  # (n,2)
         cost = cdist(mean_temp, s_rot.cpu().numpy())
         new_idx = solve_assignment(cost)
@@ -116,12 +118,66 @@ def recover_order(mean_shape, unordered_shape, max_iter=5, device=torch.device("
             break
         index = new_idx
 
+    perm = torch.tensor(index, dtype=torch.long, device=device)
+    final_aligned = procrustes_align(shapes_torch[perm], mean_torch, allow_reflection=allow_reflection)
+    residual = torch.norm(final_aligned - mean_torch).item()
+    return index, residual
+
+
+def recover_order(
+    mean_shape, unordered_shape, max_iter=5, device=torch.device("cpu"), allow_reflection=False
+):
+    """
+    mean_shape: torch tensor (n_points, 2)
+    unordered_shape: torch tensor (n_points, 2) - same points but random order/transform
+    allow_reflection: see procrustes_align -- pass True when unordered_shape
+        might be a mirrored version of mean_shape (e.g. a prediction from a
+        horizontally-flipped image).
+
+        Note this needs more than just passing allow_reflection through to
+        procrustes_align: the very first correspondence guess (before any
+        rotation/reflection is applied) is a raw nearest-neighbor match on
+        the unaligned points, which for a genuinely mirrored shape is close
+        to arbitrary -- the small fixed number of refinement iterations
+        can't reliably recover from that bad a start. So when
+        allow_reflection is set, the whole search is additionally run a
+        second time from a pre-mirrored copy of the input as the starting
+        orientation, and whichever of the two (mirrored-start vs.
+        normal-start) converges to the lower residual is used.
+    Returns:
+        reordered_shape: torch tensor (n_points, 2) = unordered_shape[perm_idx]
+    """
+    mean = mean_shape.to(device).float()
+    s = unordered_shape.to(device).float()
+    assert s.shape[0] == mean.shape[0] and mean.shape[1] == 2
+
+    mean_torch = normalize_shape(center_shape(mean))
+    shapes_torch = normalize_shape(center_shape(s))
+
+    index, residual = _recover_order_index(mean_torch, shapes_torch, max_iter, device, allow_reflection)
+
+    if allow_reflection:
+        mirrored_shapes_torch = shapes_torch.clone()
+        mirrored_shapes_torch[:, 0] *= -1
+        mirrored_index, mirrored_residual = _recover_order_index(
+            mean_torch, mirrored_shapes_torch, max_iter, device, allow_reflection
+        )
+        if mirrored_residual < residual:
+            index = mirrored_index
+
     reordered_shape = unordered_shape[index]
 
     return reordered_shape
 
 
-def handle_coordinates(coords, mean_coords):
+def handle_coordinates(coords, mean_coords, allow_reflection=False):
+    """
+    allow_reflection: see procrustes_align -- pass True when coords might come
+    from a horizontally-flipped image (e.g. TrainAugmentConfig's
+    horizontal_flip_p > 0). Without this, procrustes_align's rotation-only
+    constraint means a mirrored prediction can be matched to entirely wrong
+    landmark identities even though the underlying detection is accurate.
+    """
     mask_coords = coords.detach().clone()
     if len(mask_coords) > 19:
         extra_points = len(mask_coords) - len(mean_coords)
@@ -135,9 +191,9 @@ def handle_coordinates(coords, mean_coords):
                 reduced = torch.stack(
                     [p for i, p in enumerate(mask_coords) if i not in remove_idx]
                 )
-                reordered = recover_order(mean_coords, reduced)
+                reordered = recover_order(mean_coords, reduced, allow_reflection=allow_reflection)
                 gpa = procrustes_align(
-                    normalize_shape(center_shape(reordered)), mean_coords
+                    normalize_shape(center_shape(reordered)), mean_coords, allow_reflection=allow_reflection
                 )
                 loss = torch.norm(gpa - mean_coords).item()
                 if loss < best_loss:
@@ -162,9 +218,9 @@ def handle_coordinates(coords, mean_coords):
                     [p for i, p in enumerate(mean_coords) if i not in remove_idx]
                 )
                 temp_mean_cn = normalize_shape(center_shape(temp_mean))
-                reordered = recover_order(temp_mean_cn, mask_coords)
+                reordered = recover_order(temp_mean_cn, mask_coords, allow_reflection=allow_reflection)
                 gpa = procrustes_align(
-                    normalize_shape(center_shape(reordered)), temp_mean_cn
+                    normalize_shape(center_shape(reordered)), temp_mean_cn, allow_reflection=allow_reflection
                 )
                 loss = torch.norm(gpa - temp_mean_cn).item()
 
@@ -184,6 +240,7 @@ def handle_coordinates(coords, mean_coords):
                 normalize_shape(center_shape(best_reordered)),
                 normalize_shape(center_shape(best_temp_mean)),
                 only_matrix=True,
+                allow_reflection=allow_reflection,
             )
 
             mean_coords_temp = (
@@ -208,5 +265,5 @@ def handle_coordinates(coords, mean_coords):
                 random_points = torch.stack([random_x, random_y], dim=1)
                 mask_coords = torch.cat([mask_coords, random_points], dim=0)
 
-    reordered = recover_order(mean_coords, mask_coords)
+    reordered = recover_order(mean_coords, mask_coords, allow_reflection=allow_reflection)
     return reordered

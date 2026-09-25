@@ -46,7 +46,11 @@ class WingImage:
         self._check_carefully = len(mask_coords) < 19 or len(mask_coords) > 22
 
         try:
-            self._coordinates = handle_coordinates(mask_coords, self.mean_coords)
+            # allow_reflection=True: the trained model may have learned to detect
+            # landmarks on horizontally-mirrored wings too (TrainAugmentConfig's
+            # horizontal_flip_p), which a rotation-only match can't align
+            # correctly against mean_coords even when detection itself is fine.
+            self._coordinates = handle_coordinates(mask_coords, self.mean_coords, allow_reflection=True)
         except Exception as e:
             self._check_carefully = True
             if len(mask_coords) > 19:
@@ -62,7 +66,12 @@ class WingImage:
             self._coordinates = mask_coords
 
         if not self._check_carefully:
-            gpa = procrustes_align(normalize_shape(center_shape(self._coordinates)), self.mean_coords)
+            # Same reflection allowance as above: self._coordinates may still be
+            # in a mirrored spatial arrangement even after correct identity
+            # matching, so this residual check needs it too.
+            gpa = procrustes_align(
+                normalize_shape(center_shape(self._coordinates)), self.mean_coords, allow_reflection=True
+            )
             gpa_vals = torch.linalg.norm(self.mean_coords- gpa, dim=1)
             self._check_carefully = gpa_vals.max().item() > 0.04
 
