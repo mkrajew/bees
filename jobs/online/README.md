@@ -6,7 +6,8 @@ Configs 4b, 4c and 4d are follow-ups on top of config 4's own result (see
 below) rather than further points in this grid. Config 5 is a fresh config
 combining the best-evidenced fixes found across that whole 4-series
 investigation (see its own section below) -- not a follow-up on any single
-one of them.
+one of them. Configs 6a-6d are loss-tuning follow-ups on top of config 5's
+own result.
 
 | Config | Loss | Augmentation |
 |---|---|---|
@@ -261,6 +262,67 @@ actually measures. Worth revisiting after seeing results -- lower if the
 val-error drift is still present, higher if rotation-robustness visibly
 suffers (re-check with notebook 25).
 
+**Result so far (run in progress):** epoch 0 reached `val_mean_error_px=1.83`
+with `val_wrong_spot_count_pct=2.49%` -- by far the best single number (and
+by far the lowest wrong_pct) seen anywhere in this online-augmentation
+series, confirming both fixes reduce the initial post-warm-start shock a lot.
+It then climbs to ~2.1-2.2px over the next few epochs, same direction as
+4/4b/4c/4d -- but unlike their clean monotonic climb to the end, this one
+plateaus/oscillates in that band rather than continuing to worsen, wrong_pct
+stays in a stable 3-4% band throughout (vs. 4/4b/4c/4d's eventual 5-9%+), and
+`val_median_error_px` keeps slowly falling even past epoch 15. Reads as the
+two fixes working, just not eliminating the underlying mechanism -- config
+6a-6d (below) pick up from here.
+
+## Config 6a-6d -- loss tuning on top of config 5
+
+Config 5 fixed the structural issues (mask corners, rotation/val mismatch)
+but still plateaus around `val_mean_error_px` ~2.1-2.2px, held back by a
+persistent ~3-4% `val_wrong_spot_count_pct` tail even as `val_median_error_px`
+keeps slowly improving -- reads as a genuine subset of hard-to-detect
+landmarks, not general stagnation. These four configs tune the loss function
+itself on top of config 5's result, varying two different axes:
+
+| | Config 5 | 6a | 6b | 6c | 6d |
+|---|---|---|---|---|---|
+| `pos_weight` | 50 | **75** | **100** | 50 | **75** |
+| `dice_weight` / `bce_weight` | 0.5 / 0.5 | same | same | **0.8 / 0.2** | **0.8 / 0.2** |
+| Augmentation | Aug B, `rotation_p=0.3` | same | same | same | same |
+| Mask | circular, `square_size=5` | same | same | same | same |
+| Warm-start | `unet-final-k5.ckpt` | config 5's own checkpoint (weights only) | same | config 5's own checkpoint (`strict=False`) | config 5's own checkpoint (weights only) |
+
+**`pos_weight` axis (6a, 6b):** targets the wrong_pct tail directly --
+pushing harder for recall should reduce completely-missed landmarks (which
+is what forces `handle_coordinates`' costly missing-point extrapolation),
+at some cost to precision that the extra-point handling already copes with
+reasonably well. 6a (75) and 6b (100) map two points above config 5's 50, to
+see the shape of the response rather than a single guess -- config 4b
+already showed 25 is worse than 50, so this round only explores upward.
+
+**`dice_weight`/`bce_weight` axis (6c, 6d):** a ratio never varied anywhere
+in this series before -- every config 1-6b kept it at 0.5/0.5. 0.8/0.2 is a
+deliberate echo of `unet-final-k5.ckpt`'s own original training recipe
+(`unet_kernel_5x5.py`, per git history) -- the model whose landmark
+precision (1.38px, fully converged) nothing in this series has matched yet.
+Dice rewards overall region overlap more forgivingly than BCE's harder
+per-pixel penalty, which may reduce the missed-landmark tail from a
+different angle than `pos_weight`.
+
+**6d combines both** (6a's milder pos_weight=75 + 6c's ratio) rather than
+waiting for 6a/6c's individual results first: all four run in parallel on
+the cluster regardless, so testing the combination now saves a full
+round-trip later if both individually help.
+
+**Warm-start gotcha, again:** 6a/6b/6d change `pos_weight` relative to
+config 5's own saved criterion (50), so they need the same weights-only
+loading as config 4b (see its section above) -- `strict=False` alone would
+silently reload `pos_weight=50` from the checkpoint and discard whatever
+these files set. 6c only changes `dice_weight`/`bce_weight`, which are plain
+Python floats on `BCEDiceLoss` (never registered as buffers), so they never
+appear in the checkpoint's state dict at all -- nothing to overwrite, and
+its `pos_weight=50` matches config 5's exactly anyway, so the standard
+`train(..., checkpoint_path, strict=False)` pattern is safe for 6c alone.
+
 ## Held constant across all 4 configs
 
 - Model: `UNet(in_channels=1, out_channels=1, kernel_size=5, sigmoid=False)`
@@ -321,8 +383,8 @@ destructively touch already-correct packages.
   `wings/modeling/training/lightning-checkpoints/unet-400-online-augmentation-k5-N/`,
   named `unet-400-online-augmentation-k5-N-{epoch:02d}-{val_mean_error_px:.4f}-online-augmentation-k5-N.ckpt`
 
-Same pattern for configs 4b/4c/4d (`N` = `"4b"`/`"4c"`/`"4d"`, e.g.
-`unet-400-online-augmentation-k5-4d`).
+Same pattern for configs 4b/4c/4d/6a/6b/6c/6d (`N` = `"4b"`/`"4c"`/`"4d"`/
+`"6a"`/`"6b"`/`"6c"`/`"6d"`, e.g. `unet-400-online-augmentation-k5-6a`).
 
 ## Adding more configs later
 
