@@ -3,7 +3,10 @@
 Four configs comparing 2 loss functions x 2 augmentation-strength presets, all
 warm-started from the same checkpoint so only the loss/augmentation axes vary.
 Configs 4b, 4c and 4d are follow-ups on top of config 4's own result (see
-below) rather than further points in this grid.
+below) rather than further points in this grid. Config 5 is a fresh config
+combining the best-evidenced fixes found across that whole 4-series
+investigation (see its own section below) -- not a follow-up on any single
+one of them.
 
 | Config | Loss | Augmentation |
 |---|---|---|
@@ -56,6 +59,18 @@ defaults (`triangle_noise_p=0.4`, `n_triangles_range=(10, 60)`,
 `color_jitter_p=0.4`, `color_jitter_brightness/contrast_range=(0.7, 1.3)`); B is
 the stronger of the two (higher noise probability and a much wider triangle-count
 range).
+
+**`rotation_p`** (default `1.0`, added for config 5 -- see below): unlike
+`horizontal_flip_p`/`triangle_noise_p`/`color_jitter_p`, rotation previously
+had no apply-probability at all -- every training access got rotated by a
+random angle drawn from `rotation_degrees`, unconditionally. At `rotation_p=1.0`
+(every config through 4d) that's fine as a concept but has a real consequence:
+`rotation_degrees` is a wide *continuous* range, so the chance of a random draw
+landing anywhere near 0 degrees (what validation always uses -- val/test never
+rotate) is essentially zero. Training supplies virtually no examples resembling
+what val is scored on. `rotation_p < 1` gives that fraction of training accesses
+the identity (no rotation) instead, via `v2.RandomApply` wrapping the existing
+`v2.RandomRotation`.
 
 ## Follow-up: config 4b
 
@@ -187,6 +202,65 @@ are computed from the model's *predicted* mask's contours regardless of what
 shape the *training target* used, so whichever shape the model learns to
 predict is picked up automatically.
 
+## Config 5 -- not a config-4 follow-up, a fresh synthesis
+
+Pulling the wandb history for configs 4/4b/4c/4d (full per-epoch curves, not
+just best-vs-last) showed something bigger than any single config's own
+result: **all four `val_mean_error_px` curves *monotonically worsen* after an
+early peak** (epoch 0-2), with no sign of turning back around before
+early-stopping fires -- not "hasn't recovered yet," but a steady, ongoing
+drift in the wrong direction (config 4c: 2.133 -> 2.235 -> ... -> 2.415 over
+25 epochs; 4d and 4/4b show the same shape, shallower). More training epochs
+at any of these settings would likely make things worse, not better.
+
+The mechanism: `unet-final-k5.ckpt` was already a fully converged, precise
+model on *plain, unrotated* wing crops. Fine-tuning it with `rotation_p=1.0`
+(every config through 4d) means virtually 100% of training gradient comes
+from randomly rotated -- and therefore resampling-blurred, for any angle away
+from the axes -- images, while val/test never rotate at all. Training
+supplies essentially no examples resembling what val is scored on, so
+continued training pulls the model further toward "good under rotation/blur"
+at the direct expense of "precise on the crisp images validation measures" --
+independent of `pos_weight` or mask shape/size, which is exactly why 4b/4c/4d
+didn't fix it either.
+
+Config 5 combines the two best-evidenced fixes instead of testing one more
+variable in isolation on top of config 4:
+
+| | Config 4 | Config 5 |
+|---|---|---|
+| Loss | `BCEDiceLoss(pos_weight=50, dice_weight=0.5, bce_weight=0.5)` | same |
+| Augmentation | Aug B (`rotation_p=1.0`, implicit) | Aug B, **`rotation_p=0.3`** |
+| Mask | square, `square_size=5` | **circular**, `square_size=5` (radius 2) |
+| Warm-start | `models/new_unet/unet-final-k5.ckpt` | same |
+
+Why the circular mask (config 4d's approach) and not 4c's `square_size=3`:
+`square_size=3` was tried first -- it initially looked more promising than
+4d (better best-epoch median error on clean validation, and a *fully
+converged* track record from `unet-final-k5.ckpt` itself at 1.38px, which the
+circular mask didn't have). But re-running config 4c's actual checkpoint
+through notebook 25's rotation-robustness sweep showed it performing
+noticeably worse than `square_size=5` specifically on rotated input: a 3x3
+target is a much less forgiving detection problem once the input is degraded
+by rotation's resampling blur, with far less margin for error than a 5x5 one.
+The circular mask keeps the *same radius* as config 4/4b/4d's square
+(`square_size=5` -> radius 2) -- it removes the corners without shrinking the
+target's overall reach -- so it shouldn't cost the rotation robustness this
+whole online-augmentation effort exists to build in the first place, unlike
+an outright smaller target.
+
+Why `pos_weight=50` and not 4b's 25: 4b's full curve was *worse* than
+config 4's at essentially every epoch measured (e.g. best epoch: 2.340 vs
+2.281) -- no evidence so far that lowering pos_weight helps at all.
+
+Why `rotation_p=0.3` specifically: see the "Augmentation options" section
+above for the full reasoning; 0.3 keeps most of the rotation-robustness
+training signal (notebook 25 confirmed that robustness is real and worth
+keeping) while giving 70% of training accesses a chance to look like what val
+actually measures. Worth revisiting after seeing results -- lower if the
+val-error drift is still present, higher if rotation-robustness visibly
+suffers (re-check with notebook 25).
+
 ## Held constant across all 4 configs
 
 - Model: `UNet(in_channels=1, out_channels=1, kernel_size=5, sigmoid=False)`
@@ -195,8 +269,10 @@ predict is picked up automatically.
   config's criterion here -- e.g. `BCEDiceLoss`'s `pos_weight` buffer isn't
   present in `WeightedDiceLoss` -- so that mismatched key is ignored while the
   actual UNet weights still load exactly; verified for both loss classes)
-- Mask shape/size: square, `square_size=5` (config 4c changes size to 3,
-  config 4d changes shape to circle -- see above)
+- Mask shape/size: square, `square_size=5` (config 4c changes size to 3;
+  configs 4d and 5 change shape to circle, keeping `square_size=5`/radius 2
+  -- see above)
+- `rotation_p=1.0` (config 5 is the one exception, at 0.3 -- see above)
 - `num_epochs=100`, `batch_size=12`, `num_workers=8`
 - `early_stop_patience=25`, `early_stop_min_delta=0.01` (monitor: `val_mean_error_px`)
 - Data source: `data/processed/cropped/` (plain YOLO-cropped, no offline augmentation)

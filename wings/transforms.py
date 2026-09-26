@@ -139,6 +139,7 @@ class TrainAugmentConfig:
     """Reviewable knobs for training-time augmentation severity."""
 
     rotation_degrees: tuple[float, float] = (-90.0, 90.0)
+    rotation_p: float = 1.0
     horizontal_flip_p: float = 0.5
     triangle_noise_p: float = 0.4
     n_triangles_range: tuple[int, int] = (10, 60)
@@ -151,9 +152,20 @@ class TrainAugmentConfig:
 
 class _TrainTransform:
     """Callable(image, keypoints) -> (image, keypoints) with fresh randomness on
-    every call: random horizontal flip, then random rotation, then
-    (independently, each 40% of the time by default) triangle noise and color
-    jitter, then the deterministic resize+pad.
+    every call: random horizontal flip, then (independently, `rotation_p` of
+    the time -- 100% by default, matching the original unconditional
+    behavior) random rotation, then (independently, each 40% of the time by
+    default) triangle noise and color jitter, then the deterministic
+    resize+pad.
+
+    rotation_p exists because, unlike flip/noise/jitter, rotation_degrees
+    draws from a wide continuous range with no way to land on "unrotated" by
+    chance -- at rotation_p=1.0 (the default, used by every config before
+    this field existed) validation's always-unrotated images are structurally
+    never resembled by anything seen in training, which measurably show up as
+    val_mean_error_px drifting worse, not better, over training epochs
+    (config 4/4b/4c/4d all show this). rotation_p<1 gives some fraction of
+    training accesses the identity (no rotation) instead.
 
     A plain module-level class rather than a closure so instances stay picklable
     under Windows' `spawn`-based multiprocessing, which DataLoader workers need
@@ -164,10 +176,15 @@ class _TrainTransform:
         self.geometric = v2.Compose(
             [
                 v2.RandomHorizontalFlip(p=cfg.horizontal_flip_p),
-                v2.RandomRotation(
-                    degrees=cfg.rotation_degrees,
-                    expand=True,
-                    interpolation=v2.InterpolationMode.BILINEAR,
+                v2.RandomApply(
+                    [
+                        v2.RandomRotation(
+                            degrees=cfg.rotation_degrees,
+                            expand=True,
+                            interpolation=v2.InterpolationMode.BILINEAR,
+                        )
+                    ],
+                    p=cfg.rotation_p,
                 ),
             ]
         )
