@@ -226,7 +226,10 @@ def compute_statistics(
 
         wrong_spot_count.append(float(n_pred_points != 19))
 
-        reordered = handle_coordinates(pred_coords, mean_coords)
+        # allow_reflection=True: predictions can come from a horizontally-flipped
+        # sample (TrainAugmentConfig.horizontal_flip_p), which a rotation-only
+        # match can't align correctly against mean_coords.
+        reordered = handle_coordinates(pred_coords, mean_coords, allow_reflection=True)
         reordered = reordered.detach().cpu().float()
 
         distances = torch.norm(reordered - true_coords, dim=1)

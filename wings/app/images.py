@@ -7,7 +7,13 @@ import torch
 from PIL import Image, PngImagePlugin
 
 from wings.app import device
-from wings.gpa import handle_coordinates, procrustes_align, normalize_shape, center_shape
+from wings.gpa import (
+    handle_coordinates,
+    procrustes_align,
+    normalize_shape,
+    center_shape,
+    FULL_ROTATION_MULTISTART_ANGLES,
+)
 from wings.utils import load_image
 from wings.visualizing.image_preprocess import unet_fit_rectangle_preprocess, final_coords
 
@@ -46,7 +52,27 @@ class WingImage:
         self._check_carefully = len(mask_coords) < 19 or len(mask_coords) > 22
 
         try:
-            self._coordinates = handle_coordinates(mask_coords, self.mean_coords)
+            # allow_reflection=True: the trained model may have learned to detect
+            # landmarks on horizontally-mirrored wings too (TrainAugmentConfig's
+            # horizontal_flip_p), which a rotation-only match can't align
+            # correctly against mean_coords even when detection itself is fine.
+            # multistart_angles/pca_prealign: a real uploaded photo could be
+            # rotated by any amount (unlike val/test, which are never rotated)
+            # -- without these, handle_coordinates's correspondence search can
+            # get stuck in a wrong landmark ordering near hard angles like 90
+            # degrees even though detection itself is accurate (fixed grid
+            # alone: ~12.7px -> ~2.7px mean error at 90 degrees on a real
+            # trained checkpoint; adding pca_prealign closed a further,
+            # separate gap found on a later checkpoint -- a cheap,
+            # per-sample-adaptive estimate of the actual rotation needed,
+            # rather than only a fixed spread of angles).
+            self._coordinates = handle_coordinates(
+                mask_coords,
+                self.mean_coords,
+                allow_reflection=True,
+                multistart_angles=FULL_ROTATION_MULTISTART_ANGLES,
+                pca_prealign=True,
+            )
         except Exception as e:
             self._check_carefully = True
             if len(mask_coords) > 19:
@@ -62,7 +88,12 @@ class WingImage:
             self._coordinates = mask_coords
 
         if not self._check_carefully:
-            gpa = procrustes_align(normalize_shape(center_shape(self._coordinates)), self.mean_coords)
+            # Same reflection allowance as above: self._coordinates may still be
+            # in a mirrored spatial arrangement even after correct identity
+            # matching, so this residual check needs it too.
+            gpa = procrustes_align(
+                normalize_shape(center_shape(self._coordinates)), self.mean_coords, allow_reflection=True
+            )
             gpa_vals = torch.linalg.norm(self.mean_coords- gpa, dim=1)
             self._check_carefully = gpa_vals.max().item() > 0.04
 

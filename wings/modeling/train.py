@@ -1,12 +1,13 @@
 import lightning as L
 import torch
 import torch.utils.data as data
-from lightning.pytorch.callbacks import ModelCheckpoint
+from lightning.pytorch.callbacks import ModelCheckpoint, LearningRateMonitor
 from lightning.pytorch.callbacks.early_stopping import EarlyStopping
 from lightning.pytorch.loggers import WandbLogger, CSVLogger
 
 from wings.modeling.litnet import LitNet
 from wings.config import PROCESSED_DATA_DIR
+from wings.transforms import seed_worker
 
 
 def train(
@@ -14,6 +15,7 @@ def train(
     datasets: tuple[data.Dataset, data.Dataset, data.Dataset],
     params: dict,
     path=None,
+    strict: bool = True,
 ) -> None:
     """
     Trains and evaluates a PyTorch model using the Lightning framework.
@@ -37,6 +39,11 @@ def train(
             - "batch_size" (int): Batch size for all dataloaders.
             - "num_workers" (int): Number of subprocesses to use for data loading.
             - "criterion" (torch.nn.Module): Loss function to optimize.
+        path: Optional checkpoint to warm-start from.
+        strict: Passed to `LitNet.load_from_checkpoint` when `path` is given. Set to
+            False when the checkpoint was saved with a different criterion than
+            `params["criterion"]` (e.g. its own stateful buffers, like
+            BCEDiceLoss's `pos_weight`, won't have a matching key to load into).
     """
 
     mean_coords = torch.load(
@@ -58,6 +65,7 @@ def train(
             criterion=params["criterion"],
             num_epochs=params["num_epochs"],
             mean_coords=mean_coords,
+            strict=strict,
         )
 
     wandb_logger = WandbLogger(
@@ -89,11 +97,13 @@ def train(
         filename=params["checkpoint_filename"],
     )
 
+    lr_monitor = LearningRateMonitor(logging_interval="epoch")
+
     trainer = L.Trainer(
         max_epochs=params["num_epochs"],
         logger=[wandb_logger, csv_logger],
         # callbacks=[early_stop_callback, RichProgressBar(), checkpoint_callback],
-        callbacks=[early_stop_callback, checkpoint_callback],
+        callbacks=[early_stop_callback, checkpoint_callback, lr_monitor],
         deterministic=True,
     )
 
@@ -107,6 +117,7 @@ def train(
         persistent_workers=use_persistent_workers,
         shuffle=True,
         drop_last=True,
+        worker_init_fn=seed_worker if params["num_workers"] > 0 else None,
     )
     val_dataloader = data.DataLoader(
         val_dataset,
