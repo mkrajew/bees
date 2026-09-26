@@ -115,6 +115,33 @@ def _rotate_2d(points, degrees):
     return points @ rot
 
 
+def _pca_angle(points):
+    """Angle (degrees) of the dominant principal axis of a centered 2D point
+    cloud, via eigendecomposition of its 2x2 covariance matrix. Ambiguous up
+    to 180 degrees -- a principal axis has no inherent "forward" direction,
+    only an orientation -- so callers needing a specific heading must try
+    both this angle and its +180 counterpart (see _pca_prealign_angles)."""
+    cov = points.T @ points
+    _, eigvecs = torch.linalg.eigh(cov)
+    principal = eigvecs[:, -1]  # eigh returns ascending eigenvalues; last = largest
+    return torch.rad2deg(torch.atan2(principal[1], principal[0])).item()
+
+
+def _pca_prealign_angles(mean_torch, shapes_torch):
+    """Two candidate rotation angles (180 degrees apart, see _pca_angle) that
+    would align shapes_torch's own dominant axis to mean_torch's -- a cheap
+    (one 2x2 eigendecomposition each), data-driven alternative to a fixed
+    angle grid like FULL_ROTATION_MULTISTART_ANGLES: instead of blindly
+    trying a fixed spread of angles, this estimates the *actual* orientation
+    of this specific shape directly from its own point cloud, independent of
+    landmark identity/order (PCA doesn't care which point is which, only
+    their overall spread) -- so it isn't thrown off by the same
+    extra/missing-point noise that makes a fixed grid or the raw unrotated
+    guess unreliable at hard angles. Both inputs must already be centered."""
+    delta = _pca_angle(mean_torch) - _pca_angle(shapes_torch)
+    return (delta, delta + 180.0)
+
+
 def _recover_order_index(mean_torch, shapes_torch, max_iter, device, allow_reflection):
     """Runs the iterative nearest-assignment + Procrustes-realign loop from a
     given starting point-cloud orientation (mean_torch/shapes_torch already
@@ -153,6 +180,7 @@ def recover_order(
     device=torch.device("cpu"),
     allow_reflection=False,
     multistart_angles=(0.0,),
+    pca_prealign=False,
 ):
     """
     mean_shape: torch tensor (n_points, 2)
@@ -186,6 +214,14 @@ def recover_order(
         order, so the resulting index is always valid against the original
         unordered_shape. The default (0.0,) preserves the previous
         single-unrotated-start behavior exactly.
+    pca_prealign: if True, also try the (up to two) rotation angles that PCA
+        estimates would align unordered_shape's own dominant axis to
+        mean_shape's -- see _pca_prealign_angles. Cheap (two 2x2
+        eigendecompositions, negligible next to the O(max_iter) Hungarian
+        matching this function already does) and, unlike multistart_angles's
+        fixed grid, adapts to this specific shape's actual orientation
+        instead of blindly sampling a spread -- can replace a much wider
+        fixed grid rather than just supplementing it.
     Returns:
         reordered_shape: torch tensor (n_points, 2) = unordered_shape[perm_idx]
     """
@@ -196,10 +232,14 @@ def recover_order(
     mean_torch = normalize_shape(center_shape(mean))
     shapes_torch = normalize_shape(center_shape(s))
 
+    angles = tuple(multistart_angles)
+    if pca_prealign:
+        angles = angles + _pca_prealign_angles(mean_torch, shapes_torch)
+
     reflect_options = (False, True) if allow_reflection else (False,)
 
     best_index, best_residual = None, None
-    for angle in multistart_angles:
+    for angle in angles:
         base = shapes_torch if angle == 0.0 else _rotate_2d(shapes_torch, angle)
         for reflect in reflect_options:
             candidate = base
@@ -249,7 +289,9 @@ def _estimate_orientation(mean_coords, coords, allow_reflection, multistart_angl
     return best_angle
 
 
-def handle_coordinates(coords, mean_coords, allow_reflection=False, multistart_angles=(0.0,)):
+def handle_coordinates(
+    coords, mean_coords, allow_reflection=False, multistart_angles=(0.0,), pca_prealign=False
+):
     """
     allow_reflection: see procrustes_align -- pass True when coords might come
     from a horizontally-flipped image (e.g. TrainAugmentConfig's
@@ -286,13 +328,26 @@ def handle_coordinates(coords, mean_coords, allow_reflection=False, multistart_a
     estimate wasn't computed from). When multistart_angles is left at its
     default (a single angle), this pre-pass is skipped and behavior/cost are
     unchanged from before this parameter existed.
+    pca_prealign: see recover_order -- unlike multistart_angles's fixed grid,
+    PCA-derived candidates cost one 2x2 eigendecomposition each, cheap enough
+    to apply directly to *every* recover_order call here, including inside
+    the itertools.combinations search, without that search's combinatorial
+    blowup. When True, this replaces the _estimate_orientation workaround
+    above for the inner search (each combination gets its own PCA estimate,
+    tailored to exactly the points in that combination, rather than sharing
+    one estimate computed from a naive truncation of the whole coords) and
+    is passed straight through to the final call too, on top of whatever
+    multistart_angles already provides there.
     """
     mask_coords = coords.detach().clone()
 
-    inner_multistart_angles = multistart_angles
-    if len(multistart_angles) > 1:
-        est_angle = _estimate_orientation(mean_coords, mask_coords, allow_reflection, multistart_angles)
-        inner_multistart_angles = (0.0, est_angle) if est_angle != 0.0 else (0.0,)
+    if pca_prealign:
+        inner_multistart_angles = (0.0,)
+    else:
+        inner_multistart_angles = multistart_angles
+        if len(multistart_angles) > 1:
+            est_angle = _estimate_orientation(mean_coords, mask_coords, allow_reflection, multistart_angles)
+            inner_multistart_angles = (0.0, est_angle) if est_angle != 0.0 else (0.0,)
 
     if len(mask_coords) > 19:
         extra_points = len(mask_coords) - len(mean_coords)
@@ -307,7 +362,8 @@ def handle_coordinates(coords, mean_coords, allow_reflection=False, multistart_a
                     [p for i, p in enumerate(mask_coords) if i not in remove_idx]
                 )
                 reordered = recover_order(
-                    mean_coords, reduced, allow_reflection=allow_reflection, multistart_angles=inner_multistart_angles
+                    mean_coords, reduced, allow_reflection=allow_reflection,
+                    multistart_angles=inner_multistart_angles, pca_prealign=pca_prealign,
                 )
                 gpa = procrustes_align(
                     normalize_shape(center_shape(reordered)), mean_coords, allow_reflection=allow_reflection
@@ -336,7 +392,8 @@ def handle_coordinates(coords, mean_coords, allow_reflection=False, multistart_a
                 )
                 temp_mean_cn = normalize_shape(center_shape(temp_mean))
                 reordered = recover_order(
-                    temp_mean_cn, mask_coords, allow_reflection=allow_reflection, multistart_angles=inner_multistart_angles
+                    temp_mean_cn, mask_coords, allow_reflection=allow_reflection,
+                    multistart_angles=inner_multistart_angles, pca_prealign=pca_prealign,
                 )
                 gpa = procrustes_align(
                     normalize_shape(center_shape(reordered)), temp_mean_cn, allow_reflection=allow_reflection
@@ -385,6 +442,7 @@ def handle_coordinates(coords, mean_coords, allow_reflection=False, multistart_a
                 mask_coords = torch.cat([mask_coords, random_points], dim=0)
 
     reordered = recover_order(
-        mean_coords, mask_coords, allow_reflection=allow_reflection, multistart_angles=multistart_angles
+        mean_coords, mask_coords, allow_reflection=allow_reflection,
+        multistart_angles=multistart_angles, pca_prealign=pca_prealign,
     )
     return reordered

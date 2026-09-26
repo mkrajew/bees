@@ -8,6 +8,9 @@ combining the best-evidenced fixes found across that whole 4-series
 investigation (see its own section below) -- not a follow-up on any single
 one of them. Config 5b corrects a `rotation_p` miscommunication in config 5.
 Configs 6a-6d are loss-tuning follow-ups on top of config 5b's own result.
+Config 6 is a further fresh config (not a 6a-6d follow-up despite the
+shared "6" -- see its own section) informed by reading the actual DeepWings
+paper.
 
 | Config | Loss | Augmentation |
 |---|---|---|
@@ -354,6 +357,105 @@ appear in the checkpoint's state dict at all -- nothing to overwrite, and
 its `pos_weight=50` matches config 5b's exactly anyway, so the standard
 `train(..., checkpoint_path, strict=False)` pattern is safe for 6c alone.
 
+## GPA fix: `pca_prealign` (`wings/gpa.py`)
+
+Re-checking config 5b's checkpoint against notebook 25's rotation sweep (see
+config 5b's section above) surfaced a GPA-vs-nearest-neighbor gap again at
+large rotation angles, similar in *symptom* to the original flip/rotation
+multistart problem but only partly explained by it: at 90 degrees, several
+samples showed GPA-ordered error far above nearest-neighbor error even with
+`FULL_ROTATION_MULTISTART_ANGLES` already active (e.g. one sample: GPA=15.4px
+vs. NN=7.9px).
+
+Reading the actual DeepWings paper (see config 6 below) surfaced the fix:
+their landmark-sorting step never solves rotation and identity-assignment
+together the way `recover_order`'s Hungarian-matching does. Instead they (i)
+run PCA on the *unordered* detected point cloud to find its dominant axis,
+(ii) rotate the whole mask so that axis is horizontal, and only then (iii)
+sort left-to-right. PCA on a point cloud doesn't care about landmark
+identity or order at all -- it's a cheap, robust, per-sample-adaptive
+estimate of orientation, immune to the same "bad initial correspondence
+guess" failure mode that a fixed angle grid (or the raw unrotated guess) can
+fall into.
+
+`recover_order`/`handle_coordinates` gained a `pca_prealign` parameter that
+does the equivalent for our own pipeline: compute the PCA angle of
+`mean_coords` once and of the shape being ordered, take the (up to two,
+since a principal axis is ambiguous by 180 degrees) candidate rotations that
+would align them, and add those to whatever `multistart_angles` already
+provides -- cheap enough (one 2x2 eigendecomposition per candidate) to apply
+directly inside the `itertools.combinations` search too, not just the final
+call, unlike `multistart_angles`'s fixed grid. Verified on config 5b's
+checkpoint at 90 degrees: every sample that previously showed a large
+GPA-vs-NN gap (e.g. the 15.4px-vs-7.9px case above) came back within ~1-3px
+of its NN baseline, and the aggregate GPA mean dropped from 9.28px to
+8.61px -- with `FULL_ROTATION_MULTISTART_ANGLES` combined with
+`pca_prealign` giving identical results to `pca_prealign` alone in this
+test, at essentially the same wall time as before. Wired into
+`wings/app/images.py`'s production inference call alongside the existing
+`multistart_angles=FULL_ROTATION_MULTISTART_ANGLES`. Not needed in
+`litnet.py`'s training-time validation for the same reason the original
+multistart fix wasn't: real val/test images are never rotated.
+
+## Config 6 -- larger mask radius (matching the DeepWings paper) + full rotation
+
+Prompted by actually reading the DeepWings paper (Rodrigues et al. 2022,
+*Big Data Cogn. Comput.* 6(3):70 -- the source of the 0.943
+positional-precision benchmark and the 19-landmark scheme this whole project
+is built on). Two findings from it directly challenge choices made earlier
+in this series:
+
+**Their optimal landmark radius is *larger* than anything tried here, not
+smaller.** Every mask-size experiment so far (4c's `square_size=3`, every
+circular-mask config's radius 2) moved toward a *smaller* target, on the
+theory that smaller forces sharper, more precisely centered blobs. The
+paper's own published ablation (their Table 2) found the opposite within
+their tested range: radius <3px was "virtually ignored by the network", and
+accuracy kept improving from radius 3 to 4 (88.2% -> 91.8% exact-19-landmark
+detection), with radius >4 the point where blobs start merging into each
+other. Their radius-4 circle has ~50px of area -- larger than even our
+original `square_size=5` square (25px), and ~4x our own circular radius-2
+(13px). This reframes config 5b's rotation-robustness regression (see its
+section above): the drop was visible directly in nearest-neighbor-matched
+distances, which don't depend on landmark ordering at all, so it was a real
+detection-quality cost, not (only) an ordering problem -- consistent with a
+too-small target being less robust to rotation's resampling blur, the same
+mechanism that made config 4c's `square_size=3` fail rotation robustness
+earlier. Config 6 uses `square_size=9` (radius 4, ~49px measured) to match
+the paper's own validated value.
+
+**Their `pos_weight` (effectively 50, "background weight 1, landmark class
+weight +50") and kernel size (5x5) already match ours exactly** -- so
+neither of those was ever the differentiator.
+
+**Their landmark-sorting method is unrelated to GPA/Procrustes entirely**
+(PCA-align, then sort left-to-right -- see the `pca_prealign` section
+above), which is a fix to our *ordering algorithm*, orthogonal to this
+config's mask-size change.
+
+Given both a properly-sized mask target and a more robust ordering
+algorithm are now in place, config 6 also reverts `rotation_p` to `1.0`
+(full rotation training, like every config before 5/5b/6a-6d): the
+diagnosis that motivated lowering it (config 5's section above) was made
+entirely on `square_size=5`/circular-radius-2 checkpoints, i.e. potentially
+confounded by the same too-small-target issue. It's an open question
+whether a properly-sized target removes the need to ration rotation
+exposure at all -- config 6 tests exactly that.
+
+| | Config 5b | Config 6 |
+|---|---|---|
+| Loss | `BCEDiceLoss(pos_weight=50, dice_weight=0.5, bce_weight=0.5)` | same |
+| Augmentation | Aug B, `rotation_p=0.8` | Aug B, **`rotation_p=1.0`** |
+| Mask | circular, `square_size=5` (radius 2) | circular, **`square_size=9`** (radius 4) |
+| Warm-start | `models/new_unet/unet-final-k5.ckpt` | same |
+
+Warm-started fresh from `unet-final-k5.ckpt` (not any config 4/5-family
+checkpoint): this changes the mask target size, which nothing else in this
+series has ever trained against, so there's no more-relevant checkpoint to
+build on than the original converged baseline. No warm-start gotcha:
+`pos_weight=50` matches `unet-final-k5.ckpt`'s own criterion exactly, so the
+standard `strict=False` pattern is safe.
+
 ## Held constant across all 4 configs
 
 - Model: `UNet(in_channels=1, out_channels=1, kernel_size=5, sigmoid=False)`
@@ -363,10 +465,10 @@ its `pos_weight=50` matches config 5b's exactly anyway, so the standard
   present in `WeightedDiceLoss` -- so that mismatched key is ignored while the
   actual UNet weights still load exactly; verified for both loss classes)
 - Mask shape/size: square, `square_size=5` (config 4c changes size to 3;
-  configs 4d, 5, 5b and 6a-6d change shape to circle, keeping
-  `square_size=5`/radius 2 -- see above)
-- `rotation_p=1.0` (configs 5 at 0.3 and 5b/6a-6d at 0.8 are the exceptions
-  -- see above)
+  configs 4d, 5, 5b and 6a-6d change shape to circle at the same radius 2;
+  config 6 changes shape to circle *and* size, radius 4 -- see above)
+- `rotation_p=1.0` (configs 5 at 0.3 and 5b/6a-6d at 0.8 are the exceptions;
+  config 6 is back to the default 1.0 -- see above)
 - `num_epochs=100`, `batch_size=12`, `num_workers=8`
 - `early_stop_patience=25`, `early_stop_min_delta=0.01` (monitor: `val_mean_error_px`)
 - Data source: `data/processed/cropped/` (plain YOLO-cropped, no offline augmentation)

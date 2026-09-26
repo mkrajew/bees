@@ -56,18 +56,22 @@ class WingImage:
             # landmarks on horizontally-mirrored wings too (TrainAugmentConfig's
             # horizontal_flip_p), which a rotation-only match can't align
             # correctly against mean_coords even when detection itself is fine.
-            # multistart_angles: a real uploaded photo could be rotated by any
-            # amount (unlike val/test, which are never rotated) -- without this,
-            # handle_coordinates's correspondence search can get stuck in a wrong
-            # landmark ordering near hard angles like 90 degrees even though
-            # detection itself is accurate (verified ~12.7px -> ~2.7px mean error
-            # at 90 degrees on the real trained checkpoint, matching a
-            # ground-truth-assisted baseline only available for offline testing).
+            # multistart_angles/pca_prealign: a real uploaded photo could be
+            # rotated by any amount (unlike val/test, which are never rotated)
+            # -- without these, handle_coordinates's correspondence search can
+            # get stuck in a wrong landmark ordering near hard angles like 90
+            # degrees even though detection itself is accurate (fixed grid
+            # alone: ~12.7px -> ~2.7px mean error at 90 degrees on a real
+            # trained checkpoint; adding pca_prealign closed a further,
+            # separate gap found on a later checkpoint -- a cheap,
+            # per-sample-adaptive estimate of the actual rotation needed,
+            # rather than only a fixed spread of angles).
             self._coordinates = handle_coordinates(
                 mask_coords,
                 self.mean_coords,
                 allow_reflection=True,
                 multistart_angles=FULL_ROTATION_MULTISTART_ANGLES,
+                pca_prealign=True,
             )
         except Exception as e:
             self._check_carefully = True
