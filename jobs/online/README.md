@@ -6,8 +6,8 @@ Configs 4b, 4c and 4d are follow-ups on top of config 4's own result (see
 below) rather than further points in this grid. Config 5 is a fresh config
 combining the best-evidenced fixes found across that whole 4-series
 investigation (see its own section below) -- not a follow-up on any single
-one of them. Configs 6a-6d are loss-tuning follow-ups on top of config 5's
-own result.
+one of them. Config 5b corrects a `rotation_p` miscommunication in config 5.
+Configs 6a-6d are loss-tuning follow-ups on top of config 5b's own result.
 
 | Config | Loss | Augmentation |
 |---|---|---|
@@ -262,34 +262,65 @@ actually measures. Worth revisiting after seeing results -- lower if the
 val-error drift is still present, higher if rotation-robustness visibly
 suffers (re-check with notebook 25).
 
-**Result so far (run in progress):** epoch 0 reached `val_mean_error_px=1.83`
-with `val_wrong_spot_count_pct=2.49%` -- by far the best single number (and
-by far the lowest wrong_pct) seen anywhere in this online-augmentation
-series, confirming both fixes reduce the initial post-warm-start shock a lot.
-It then climbs to ~2.1-2.2px over the next few epochs, same direction as
-4/4b/4c/4d -- but unlike their clean monotonic climb to the end, this one
-plateaus/oscillates in that band rather than continuing to worsen, wrong_pct
-stays in a stable 3-4% band throughout (vs. 4/4b/4c/4d's eventual 5-9%+), and
-`val_median_error_px` keeps slowly falling even past epoch 15. Reads as the
-two fixes working, just not eliminating the underlying mechanism -- config
-6a-6d (below) pick up from here.
+**Result:** finished at 26 epochs, best epoch 0 (`val_mean_error_px=1.83`,
+`val_wrong_spot_count_pct=2.49%` -- by far the best single number, and by far
+the lowest wrong_pct, seen anywhere in this online-augmentation series).
+Climbs to ~2.1-2.2px over the next few epochs, same direction as 4/4b/4c/4d,
+but unlike their clean monotonic climb to the end, this one plateaus/
+oscillates in that band instead of continuing to worsen; wrong_pct stays in a
+stable 3-4% band throughout (vs. 4/4b/4c/4d's eventual 5-9%+), ending at 2.92%
+-- the best *final* wrong_pct of any config so far -- and `val_median_error_px`
+keeps slowly falling all the way to the last epoch (2.003). Reads as both
+structural fixes genuinely working on `val_mean_error_px`.
 
-## Config 6a-6d -- loss tuning on top of config 5
+**But:** re-running config 5's checkpoint through notebook 25's rotation-
+robustness sweep showed it performing *worse* than config 4b specifically on
+rotated input -- config 4b comes out clearly best there. This traces to a
+miscommunication, not a flaw in the rotation_p idea itself: `rotation_p=0.3`
+was meant to keep *most* rotation training while giving the model *some*
+unrotated exposure, but 0.3 actually means only 30% of training accesses get
+rotated (70% don't) -- the opposite emphasis from what was intended
+(~70% rotated). `val_mean_error_px` structurally can't see this cost (val/test
+are never rotated), which is exactly why it only showed up once someone
+manually re-checked notebook 25 -- see config 5b below for the fix, and take
+`val_mean_error_px` alone as an incomplete picture of "better" for any config
+that touches `rotation_p` going forward.
 
-Config 5 fixed the structural issues (mask corners, rotation/val mismatch)
-but still plateaus around `val_mean_error_px` ~2.1-2.2px, held back by a
-persistent ~3-4% `val_wrong_spot_count_pct` tail even as `val_median_error_px`
-keeps slowly improving -- reads as a genuine subset of hard-to-detect
-landmarks, not general stagnation. These four configs tune the loss function
-itself on top of config 5's result, varying two different axes:
+## Config 5b -- corrects config 5's `rotation_p`
 
-| | Config 5 | 6a | 6b | 6c | 6d |
+Same as config 5 (circular mask, `square_size=5`, `pos_weight=50`, Aug B) but
+`rotation_p=0.8` instead of 0.3 -- correcting the inversion (config 5 rotated
+only 30% of training accesses instead of the intended ~70%+), and leaning
+further toward preserving rotation robustness than the initially-corrected
+0.7 (80% of training accesses rotated, 20% not).
+Warm-started from `unet-final-k5.ckpt` again (not config 5's own checkpoint,
+since those weights are downstream of the rotation_p this file corrects).
+Configs 6a-6d (below) are retargeted to warm-start from config 5b's
+checkpoint instead of config 5's, once this run finishes -- there is no
+reason to tune loss hyperparameters on top of a base whose augmentation
+recipe is already known to need fixing.
+
+## Config 6a-6d -- loss tuning on top of config 5b
+
+(Retargeted from config 5 to config 5b once the `rotation_p` miscommunication
+above was caught -- these were originally built and briefly documented
+against config 5's checkpoint, before 5b existed.)
+
+Config 5(b) fixes the structural issues (mask corners, rotation/val
+mismatch) but on config 5 still plateaued around `val_mean_error_px`
+~2.1-2.2px, held back by a persistent ~3-4% `val_wrong_spot_count_pct` tail
+even as `val_median_error_px` kept slowly improving -- reads as a genuine
+subset of hard-to-detect landmarks, not general stagnation. These four
+configs tune the loss function itself on top of config 5b's result
+(assuming the same pattern shows up there too), varying two different axes:
+
+| | Config 5b | 6a | 6b | 6c | 6d |
 |---|---|---|---|---|---|
 | `pos_weight` | 50 | **75** | **100** | 50 | **75** |
 | `dice_weight` / `bce_weight` | 0.5 / 0.5 | same | same | **0.8 / 0.2** | **0.8 / 0.2** |
-| Augmentation | Aug B, `rotation_p=0.3` | same | same | same | same |
+| Augmentation | Aug B, `rotation_p=0.8` | same | same | same | same |
 | Mask | circular, `square_size=5` | same | same | same | same |
-| Warm-start | `unet-final-k5.ckpt` | config 5's own checkpoint (weights only) | same | config 5's own checkpoint (`strict=False`) | config 5's own checkpoint (weights only) |
+| Warm-start | `unet-final-k5.ckpt` | config 5b's own checkpoint (weights only) | same | config 5b's own checkpoint (`strict=False`) | config 5b's own checkpoint (weights only) |
 
 **`pos_weight` axis (6a, 6b):** targets the wrong_pct tail directly --
 pushing harder for recall should reduce completely-missed landmarks (which
@@ -314,13 +345,13 @@ the cluster regardless, so testing the combination now saves a full
 round-trip later if both individually help.
 
 **Warm-start gotcha, again:** 6a/6b/6d change `pos_weight` relative to
-config 5's own saved criterion (50), so they need the same weights-only
+config 5b's own saved criterion (50), so they need the same weights-only
 loading as config 4b (see its section above) -- `strict=False` alone would
 silently reload `pos_weight=50` from the checkpoint and discard whatever
 these files set. 6c only changes `dice_weight`/`bce_weight`, which are plain
 Python floats on `BCEDiceLoss` (never registered as buffers), so they never
 appear in the checkpoint's state dict at all -- nothing to overwrite, and
-its `pos_weight=50` matches config 5's exactly anyway, so the standard
+its `pos_weight=50` matches config 5b's exactly anyway, so the standard
 `train(..., checkpoint_path, strict=False)` pattern is safe for 6c alone.
 
 ## Held constant across all 4 configs
@@ -332,9 +363,10 @@ its `pos_weight=50` matches config 5's exactly anyway, so the standard
   present in `WeightedDiceLoss` -- so that mismatched key is ignored while the
   actual UNet weights still load exactly; verified for both loss classes)
 - Mask shape/size: square, `square_size=5` (config 4c changes size to 3;
-  configs 4d and 5 change shape to circle, keeping `square_size=5`/radius 2
+  configs 4d, 5, 5b and 6a-6d change shape to circle, keeping
+  `square_size=5`/radius 2 -- see above)
+- `rotation_p=1.0` (configs 5 at 0.3 and 5b/6a-6d at 0.8 are the exceptions
   -- see above)
-- `rotation_p=1.0` (config 5 is the one exception, at 0.3 -- see above)
 - `num_epochs=100`, `batch_size=12`, `num_workers=8`
 - `early_stop_patience=25`, `early_stop_min_delta=0.01` (monitor: `val_mean_error_px`)
 - Data source: `data/processed/cropped/` (plain YOLO-cropped, no offline augmentation)
@@ -383,8 +415,8 @@ destructively touch already-correct packages.
   `wings/modeling/training/lightning-checkpoints/unet-400-online-augmentation-k5-N/`,
   named `unet-400-online-augmentation-k5-N-{epoch:02d}-{val_mean_error_px:.4f}-online-augmentation-k5-N.ckpt`
 
-Same pattern for configs 4b/4c/4d/6a/6b/6c/6d (`N` = `"4b"`/`"4c"`/`"4d"`/
-`"6a"`/`"6b"`/`"6c"`/`"6d"`, e.g. `unet-400-online-augmentation-k5-6a`).
+Same pattern for configs 4b/4c/4d/5b/6a/6b/6c/6d (`N` = `"4b"`/`"4c"`/`"4d"`/
+`"5b"`/`"6a"`/`"6b"`/`"6c"`/`"6d"`, e.g. `unet-400-online-augmentation-k5-6a`).
 
 ## Adding more configs later
 

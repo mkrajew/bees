@@ -1,9 +1,9 @@
 """
 Online augmentation training -- config 6d (see jobs/online/README.md for the
 full comparison table). Fourth of four loss-tuning follow-ups on top of
-config 5's own result -- see augmented_unet_6a.py for the shared motivation
-(config 5's persistent ~3-4% val_wrong_spot_count_pct tail holding back
-val_mean_error_px despite a still-improving median).
+config 5b's result -- see augmented_unet_6a.py for the shared motivation and
+why these are retargeted from config 5 to config 5b (5's rotation_p=0.3 cost
+real rotation robustness; 5b corrects it to 0.8).
 
 Config 6d combines 6a's pos_weight change and 6c's dice/bce ratio change
 into one run, rather than waiting to see 6a/6c's individual results before
@@ -15,14 +15,14 @@ both turn out to help individually. Uses 6a's milder pos_weight=75 (not 6b's
 changes in the same run.
 
 Loss:       BCEDiceLoss(pos_weight=75, dice_weight=0.8, bce_weight=0.2) --
-            6a's pos_weight + 6c's dice/bce ratio, both moved from config 5's
+            6a's pos_weight + 6c's dice/bce ratio, both moved from config 5b's
             50/0.5/0.5 at once.
-Augment:    identical to config 5: Aug B with rotation_p=0.3.
-Mask:       circular, square_size=5 (radius 2) -- identical to config 5.
+Augment:    identical to config 5b: Aug B with rotation_p=0.8.
+Mask:       circular, square_size=5 (radius 2) -- identical to config 5b.
 
-Model UNet(kernel_size=5), warm-started from config 5's own trained checkpoint
+Model UNet(kernel_size=5), warm-started from config 5b's own trained checkpoint
 -- same weights-only loading as config 6a/6b, for the same reason (pos_weight
-differs from config 5's own 50, so the usual strict=False warm-start would
+differs from config 5b's own 50, so the usual strict=False warm-start would
 silently reload 50 and discard this file's 75 -- see augmented_unet_4b.py /
 6a.py for the full explanation). dice_weight/bce_weight don't need this
 workaround on their own (see augmented_unet_6c.py), but pos_weight still does,
@@ -32,7 +32,7 @@ Reads from the plain YOLO-cropped data/processed/cropped/ folder -- augmentation
 happens online, freshly on every training access (see wings/transforms.py).
 Logs to the shared "wingai-online-augmentation" wandb project (not the other
 training scripts' "wingai" project) so this can be compared directly against
-configs 1-5/6a/6b/6c.
+configs 1-5/5b/6a/6b/6c.
 """
 
 import torch
@@ -66,7 +66,7 @@ PARAMETERS = {
 
 TRAIN_AUGMENT_CONFIG = TrainAugmentConfig(
     rotation_degrees=(-90.0, 90.0),
-    rotation_p=0.3,
+    rotation_p=0.8,
     triangle_noise_p=0.8,
     n_triangles_range=(40, 240),
     color_jitter_p=1.0,
@@ -87,10 +87,10 @@ if __name__ == "__main__":
 
     model = UNet(in_channels=1, out_channels=1, kernel_size=5, sigmoid=False)
 
-    # Warm-start UNet weights only from config 5's own trained checkpoint --
+    # Warm-start UNet weights only from config 5b's own trained checkpoint --
     # see module docstring for why the criterion must NOT be loaded from it.
     checkpoint_path = (
-        TRAINING_DIR / "lightning-checkpoints" / "unet-400-online-augmentation-k5-5" / "last.ckpt"
+        TRAINING_DIR / "lightning-checkpoints" / "unet-400-online-augmentation-k5-5b" / "last.ckpt"
     )
     checkpoint = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
     model_state = {

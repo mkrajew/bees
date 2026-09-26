@@ -1,9 +1,9 @@
 """
 Online augmentation training -- config 6c (see jobs/online/README.md for the
 full comparison table). Third of four loss-tuning follow-ups on top of
-config 5's own result -- see augmented_unet_6a.py for the shared motivation
-(config 5's persistent ~3-4% val_wrong_spot_count_pct tail holding back
-val_mean_error_px despite a still-improving median).
+config 5b's result -- see augmented_unet_6a.py for the shared motivation and
+why these are retargeted from config 5 to config 5b (5's rotation_p=0.3 cost
+real rotation robustness; 5b corrects it to 0.8).
 
 Config 6c varies a different axis than 6a/6b: the Dice/BCE weighting inside
 BCEDiceLoss, rather than pos_weight. dice_weight=0.8/bce_weight=0.2 (vs.
@@ -19,15 +19,15 @@ penalty, which may reduce the "completely missed landmark" tail from a
 different angle than pos_weight does.
 
 Loss:       BCEDiceLoss(pos_weight=50, dice_weight=0.8, bce_weight=0.2) --
-            pos_weight unchanged from config 5; only the dice/bce ratio moves.
-Augment:    identical to config 5: Aug B with rotation_p=0.3.
-Mask:       circular, square_size=5 (radius 2) -- identical to config 5.
+            pos_weight unchanged from config 5b; only the dice/bce ratio moves.
+Augment:    identical to config 5b: Aug B with rotation_p=0.8.
+Mask:       circular, square_size=5 (radius 2) -- identical to config 5b.
 
-Model UNet(kernel_size=5), warm-started from config 5's own trained checkpoint
-(wings/modeling/training/lightning-checkpoints/unet-400-online-augmentation-k5-5/last.ckpt).
+Model UNet(kernel_size=5), warm-started from config 5b's own trained checkpoint
+(wings/modeling/training/lightning-checkpoints/unet-400-online-augmentation-k5-5b/last.ckpt).
 
 Unlike 6a/6b/6d, this one does NOT need the weights-only warm-start
-workaround: pos_weight=50 here matches config 5's own saved criterion
+workaround: pos_weight=50 here matches config 5b's own saved criterion
 exactly, so the strict=False reload of that buffer is a no-op (same value
 either way), and dice_weight/bce_weight are plain Python floats on
 BCEDiceLoss, never registered as buffers/parameters, so they never appear in
@@ -39,7 +39,7 @@ Reads from the plain YOLO-cropped data/processed/cropped/ folder -- augmentation
 happens online, freshly on every training access (see wings/transforms.py).
 Logs to the shared "wingai-online-augmentation" wandb project (not the other
 training scripts' "wingai" project) so this can be compared directly against
-configs 1-5/6a/6b.
+configs 1-5/5b/6a/6b.
 """
 
 from loguru import logger
@@ -72,7 +72,7 @@ PARAMETERS = {
 
 TRAIN_AUGMENT_CONFIG = TrainAugmentConfig(
     rotation_degrees=(-90.0, 90.0),
-    rotation_p=0.3,
+    rotation_p=0.8,
     triangle_noise_p=0.8,
     n_triangles_range=(40, 240),
     color_jitter_p=1.0,
@@ -95,7 +95,7 @@ if __name__ == "__main__":
     model.to(DEVICE)
 
     checkpoint_path = (
-        TRAINING_DIR / "lightning-checkpoints" / "unet-400-online-augmentation-k5-5" / "last.ckpt"
+        TRAINING_DIR / "lightning-checkpoints" / "unet-400-online-augmentation-k5-5b" / "last.ckpt"
     )
 
     # strict=False: kept for consistency with configs 1-5 -- see module docstring
