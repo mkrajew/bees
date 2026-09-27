@@ -550,6 +550,67 @@ checkpoint is the more relevant starting point. No warm-start gotcha:
 `pos_weight=50` matches config 6's own criterion exactly, so the standard
 `strict=False` pattern is safe.
 
+## Follow-up: config 7 -- and config 7b, continuing past an early stop
+
+Also along the way: pulled the full online-augmentation project's
+`test_mean_error_px` history from wandb to check where this series actually
+stands against the pre-online-augmentation baseline (`unet-final-k5.ckpt`'s
+own lineage, several independent runs all landing around 1.15-1.18px on the
+old `load_datasets`-loaded split -- not confirmed to be the exact same test
+images as `WingsRawDataset.split(seed=42)`, so treat as a rough reference,
+not an exact one). Every online-augmentation config pays a real, consistent
+cost on this specific metric relative to that baseline: even the series'
+best result (configs 5/5b, 1.77-1.78px) is roughly 1.5x worse, and config 6
+sits at 2.12px, roughly 1.8x worse.
+
+**What's actually driving that cost -- mask radius or `rotation_p`?**
+Config 6 changed both relative to 5b at once. Re-running notebook 25's
+rotation-sweep logic against config 4d's checkpoint (radius 2,
+`rotation_p=1.0` -- i.e. "half of config 6's change") isolates them:
+
+| | radius | rotation_p | test_mean_error_px | GPA @ 90 deg (multistart) |
+|---|---|---|---|---|
+| 4d | 2 | 1.0 | 2.21px | 5.99px (NN alone: 4.87px -- a real detection-quality drop, not just ordering) |
+| 5 / 5b | 2 | 0.3 / 0.8 | 1.77 / 1.78px | (5b, with pca_prealign) 8.61px |
+| 6 | 4 | 1.0 | 2.12px | 0.84px |
+
+At `rotation_p=1.0`, radius barely moves clean-image accuracy (4d's 2.21px
+vs. 6's 2.12px -- comparable, if anything favoring the bigger radius) but
+massively changes rotation robustness (4d's NN=4.87px vs. 6's NN=0.83px at
+90 degrees -- the smaller mask target is fragile under rotation's resampling
+blur regardless of how much rotated data it's trained on). Meanwhile,
+holding radius fixed at 2, `rotation_p` alone tracks the clean-accuracy cost
+directly (1.0 -> 2.21px, 0.3-0.8 -> 1.77-1.78px). These look like two
+**independent** knobs -- radius for rotation robustness, `rotation_p` for
+clean-image accuracy -- not one shared tradeoff, which opens up an untested
+combination: **radius 4 + `rotation_p=0.8`** (a "config 8", not yet built --
+parked until config 7/7b's results are in, to combine this with whatever
+config 7's bigger triangle noise contributes rather than testing changes in
+parallel).
+
+**Config 7 itself early-stopped at epoch 36/100.** `EarlyStopping` and
+`ReduceLROnPlateau` (`wings/modeling/litnet.py`'s `configure_optimizers`)
+both monitor only `val_mean_error_px`, which plateaued almost immediately
+(noisy, flat ~2.25-2.37px from epoch 0 onward) and triggered the
+`patience=25` stop. But `val_wrong_spot_count_pct` -- the metric config 7's
+whole premise targets (detection reliability, not positional precision) --
+kept trending down over those same 36 epochs (8.08% -> mostly 7.0-7.4% by
+the end, best single epoch 6.79%). This shows up directly in the final
+numbers: config 7 (36 epochs) already beats config 6 (full 100 epochs) on
+`test_wrong_spot_count_pct` (7.69% vs. 7.97%), for essentially the same
+`test_mean_error_px` (2.14 vs. 2.12px) -- the run was stopped by a metric
+that had already saturated, before the metric it actually targets finished
+improving.
+
+**Config 7b** continues from config 7's own checkpoint with
+`early_stop_patience` raised (25 -> 45) -- otherwise identical (same loss,
+mask, augmentation). Warm-starting resets `configure_optimizers`'s AdamW/
+`ReduceLROnPlateau` to `lr=1e-5` from scratch, which also matters here:
+config 7's own LR had likely already decayed several times by epoch 36
+(`ReduceLROnPlateau`'s `patience=8` is much shorter than `EarlyStopping`'s),
+so this isn't just a longer patience window on an already-shrunk LR, it's a
+genuinely fresh step size to keep improving `val_wrong_spot_count_pct` with.
+
 ## Held constant across configs (except where noted)
 
 - Model: `UNet(in_channels=1, out_channels=1, kernel_size=5, sigmoid=False)`
@@ -613,8 +674,8 @@ destructively touch already-correct packages.
   `wings/modeling/training/lightning-checkpoints/unet-400-online-augmentation-k5-N/`,
   named `unet-400-online-augmentation-k5-N-{epoch:02d}-{val_mean_error_px:.4f}-online-augmentation-k5-N.ckpt`
 
-Same pattern for configs 4b/4c/4d/5b/6a/6b/6c/6d (`N` = `"4b"`/`"4c"`/`"4d"`/
-`"5b"`/`"6a"`/`"6b"`/`"6c"`/`"6d"`, e.g. `unet-400-online-augmentation-k5-6a`).
+Same pattern for configs 4b/4c/4d/5b/6a/6b/6c/6d/7b (`N` = `"4b"`/`"4c"`/`"4d"`/
+`"5b"`/`"6a"`/`"6b"`/`"6c"`/`"6d"`/`"7b"`, e.g. `unet-400-online-augmentation-k5-6a`).
 
 ## Adding more configs later
 
