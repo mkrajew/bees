@@ -456,7 +456,101 @@ build on than the original converged baseline. No warm-start gotcha:
 `pos_weight=50` matches `unet-final-k5.ckpt`'s own criterion exactly, so the
 standard `strict=False` pattern is safe.
 
-## Held constant across all 4 configs
+## Follow-up: config 6
+
+Notebook 25 (in-domain test set) on config 6's checkpoint: positional
+precision ~0.992-0.994, essentially flat across the entire 0-90 degree
+rotation sweep (see "Metrics standardization" below for how this is now
+reported) -- the best rotation-robustness result of this whole series, and
+achieved even *without* `pca_prealign` (multistart alone was enough this
+time). Contrast with config 5b, which still showed GPA=8.61px at 90 degrees
+even *with* `pca_prealign` -- confirming that config 5b's problem really was
+(partly) a detection-quality cost from too-small a mask, not only an
+ordering-algorithm gap, exactly as config 6's own docstring predicted.
+
+Notebook 26 (external DeepWings test set, 3510 image/mask pairs -- true
+out-of-domain generalization) on the same checkpoint: mean positional
+precision 0.9127 over all evaluated wings (paper: 0.943), 0.9525 restricted
+to the 77.9% of wings with a plausible (16-22) predicted point count --
+actually *exceeding* the paper's own number on that subset. The entire gap
+to 0.943 traces to outright detection failures on the noisier ~22% of
+DeepWings photos, not to positional/shape accuracy where detection succeeds
+at all -- motivating config 7 below.
+
+## Metrics standardization: positional precision as the single headline number
+
+Notebooks 25/26 used to report four separate pixel-distance numbers (GPA
+mean/median, nearest-neighbor mean/median), with no absolute reference point
+-- reasonable for tracking one config's own rotation robustness in isolation,
+but not for "are we doing well," since pixel error isn't comparable across
+images of different scale/resolution, let alone against the DeepWings
+paper's own headline metric. Standardized on **mean `wing_positional_precision`**
+(DeepWings' own Procrustes-based shape-only metric, bounded [0, 1], their
+paper reports 0.943) as *the* number to lead with and compare across
+configs/against the paper, computed over **all** evaluated samples with no
+filtering -- a "restricted to reliable point counts" version would reward a
+model that fails outright more often, since each failure would just drop out
+of the average instead of counting against it (see notebook 26's own
+restricted-vs-unfiltered gap above for why this matters in practice). Pixel
+distances (GPA-ordered and nearest-neighbor mean/median) are kept in both
+notebooks as secondary/diagnostic detail, not the headline.
+
+Extracted the metric implementation (previously duplicated ad hoc between
+notebooks 20 and 26) into `wings/metrics.py`, shared by notebooks 25 and 26:
+`gpa_ordered_metrics_single` (ground truth already ordered -- notebook 25's
+in-domain case, only the prediction needs GPA ordering) and
+`gpa_ordered_metrics_both` (neither side ordered -- notebook 26's
+external-dataset case) both return `(pixel_distances, precision)` from a
+single GPA pass, alongside the shared `wing_positional_precision` and
+`nn_matched_distances`.
+
+## Config 7 -- larger triangle noise, targeting DeepWings' dirtier photos
+
+A follow-up on config 6's checkpoint (see above), not a new hypothesis:
+config 6's remaining gap to the DeepWings paper's 0.943 traces almost
+entirely to outright detection failures on the ~22% of DeepWings photos
+outside the reliable 16-22 predicted-point range, not to positional
+accuracy -- and DeepWings' own photos are frequently noted as considerably
+dirtier/more damaged than this project's own collection. `TrainAugmentConfig`
+has always varied triangle noise *count* (`n_triangles_range`) but never
+*size* (`triangle_min_size`/`triangle_max_size` left at their defaults, 2/6,
+in every config so far -- specks only ~2-9px on a 400x400 crop, comparable to
+or smaller than a single landmark).
+
+**Visual check before training on it (`notebooks/24_online_augmentation.ipynb`,
+"Config 7" section):** an initial proposal of `triangle_max_size=20` (roughly
+3x, leaving `n_triangles_range` unchanged) rendered at fixed count/size
+combinations to compare medium against large draws directly. Two things fell
+out of that check: (1) at `max_size=20` combined with the existing
+240-triangle ceiling, wing venation was substantially obscured across a large
+fraction of the crop -- too aggressive to train on as-is; (2) since
+`TriangleNoise` draws each triangle's size *uniformly* between `min_size` and
+`max_size`, raising the max shifts every triangle's expected size up, not
+just a rare worst case (half of all draws land above the new range's
+midpoint on *every* image) -- so the "medium" case was already more cluttered
+than any config before it. A maxed-count/medium-size draw and a
+medium-count/maxed-size draw looked comparably cluttered, i.e. count and size
+contribute similar amounts of total occlusion, with neither dominating.
+Settled on `triangle_max_size=11` (moderated down from 20) with
+`n_triangles_range` left unchanged at `(40, 240)`: legible at the 240-triangle
+ceiling, still meaningfully bigger than config 6's specks, and with size
+itself now moderated there's no longer a clear case for also cutting count.
+
+| | Config 6 | Config 7 |
+|---|---|---|
+| Loss | `BCEDiceLoss(pos_weight=50, dice_weight=0.5, bce_weight=0.5)` | same |
+| Augmentation | Aug B, `rotation_p=1.0`, `triangle_max_size=6` (default) | Aug B, `rotation_p=1.0`, **`triangle_max_size=11`** |
+| Mask | circular, `square_size=9` (radius 4) | same |
+| Warm-start | `models/new_unet/unet-final-k5.ckpt` | **config 6's own checkpoint** |
+
+Warm-started from config 6's own trained checkpoint
+(`unet-400-online-augmentation-k5-6/last.ckpt`), not `unet-final-k5.ckpt`:
+nothing about the mask size or architecture changes this time, so config 6's
+checkpoint is the more relevant starting point. No warm-start gotcha:
+`pos_weight=50` matches config 6's own criterion exactly, so the standard
+`strict=False` pattern is safe.
+
+## Held constant across configs (except where noted)
 
 - Model: `UNet(in_channels=1, out_channels=1, kernel_size=5, sigmoid=False)`
 - Warm-start checkpoint: `models/new_unet/unet-final-k5.ckpt`, loaded with
@@ -468,7 +562,9 @@ standard `strict=False` pattern is safe.
   configs 4d, 5, 5b and 6a-6d change shape to circle at the same radius 2;
   config 6 changes shape to circle *and* size, radius 4 -- see above)
 - `rotation_p=1.0` (configs 5 at 0.3 and 5b/6a-6d at 0.8 are the exceptions;
-  config 6 is back to the default 1.0 -- see above)
+  config 6/7 are back to the default 1.0 -- see above)
+- `triangle_min_size=2`, `triangle_max_size=6` (dataclass defaults; config 7
+  changes `triangle_max_size` to 11 -- see above)
 - `num_epochs=100`, `batch_size=12`, `num_workers=8`
 - `early_stop_patience=25`, `early_stop_min_delta=0.01` (monitor: `val_mean_error_px`)
 - Data source: `data/processed/cropped/` (plain YOLO-cropped, no offline augmentation)
