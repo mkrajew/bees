@@ -737,6 +737,73 @@ criterion's own state -- unlike a `pos_weight` change, there's no buffer/key
 overlap to worry about at all, so `strict=False` carries no gotcha in either
 direction here.
 
+## Follow-up: config 8a-8c -- a real bug, and a negative result
+
+Two things came out of these three runs, one a bug in shared code, one a
+genuine (negative) finding.
+
+**Bug**: `wings/modeling/litnet.py`'s `compute_statistics`/`binary_stats`
+both default to `output_is_logits=True`, and `validation_step`/`test_step`
+called both without ever overriding it -- harmless for every config before
+these three (1-8/8d, all `sigmoid=False`, so applying sigmoid once inside
+these functions is correct), but 8a-8c are the first in this entire series
+to use `sigmoid=True` (`WeightedDiceLoss` needs actual probabilities, see
+above). Their model output is already a probability, so applying sigmoid
+again pushes *every* pixel's value to >= 0.5 (sigmoid of anything in [0, 1]
+is at least sigmoid(0) = 0.5, confirmed directly:
+`torch.sigmoid(torch.tensor([0.0001, 0.9999]))` = `[0.500025, 0.73097]`,
+both > 0.5) -- the entire predicted mask reads as positive regardless of
+actual confidence. `val_wrong_spot_count_pct` got stuck near 100% for both
+runs before this was caught, and -- worse -- `val_mean_error_px` (what both
+`EarlyStopping` and `ReduceLROnPlateau` monitor) was equally meaningless, so
+their early-stopping/LR-schedule decisions were corrupted from epoch 0.
+Fixed by passing `output_is_logits=not self.model.sigmoid` explicitly at all
+four call sites; for every `sigmoid=False` config this is a no-op
+(`not False == True`, identical to the previous hardcoded default), so
+nothing about configs 1-8/8d changes. All three runs were cancelled and
+restarted fresh from config 8's checkpoint after the fix.
+
+**Result, post-fix**: `WeightedDiceLoss` does not beat `BCEDiceLoss` here,
+at any tested `landmark_weight`, and gets monotonically worse as
+`landmark_weight` increases:
+
+| | `val_mean_error_px` | `val_wrong_spot_count_pct` |
+|---|---|---|
+| config 8 (`BCEDiceLoss`, baseline) | 2.170 | 2.95% |
+| 8a (`landmark_weight=50`) | 2.581 | 5.99% |
+| 8b (`landmark_weight=75`) | 2.727 | 6.79% |
+| 8c (`landmark_weight=100`) | 2.900 | 8.10% |
+
+(`val_loss` itself is far lower for 8a-8c than for config 8, but that's not
+a meaningful comparison -- different loss *formulas* have different scales
+at convergence; `val_mean_error_px`/`val_wrong_spot_count_pct` are the
+actual positional/detection metrics and the only fair comparison across loss
+families.) Motivates configs 8e/8f below: return to `BCEDiceLoss` (proven
+throughout 1-8/8d) and tune its own dice/bce ratio instead of switching loss
+families.
+
+## Config 8e-8f -- dice/bce ratio, on top of config 8 directly
+
+Two follow-ups on config 8's checkpoint (not on 8a/8b/8c -- see above),
+raising `BCEDiceLoss`'s `dice_weight` (0.5 -> 0.7 in 8e, -> 0.9 in 8f;
+`bce_weight` shrinks to match, `pos_weight=50` unchanged). `dice_weight=0.8`
+was planned once before as configs 6c/6d (on top of config 5b) but never
+actually launched -- no wandb run exists for either name, dropped once the
+project pivoted to config 6's radius-4 mask instead -- so this is a
+genuinely new, untested direction, not a repeat of an old result.
+
+| | Config 8 | Config 8e | Config 8f |
+|---|---|---|---|
+| Loss | `BCEDiceLoss(pos_weight=50, dice_weight=0.5, bce_weight=0.5)` | `BCEDiceLoss(pos_weight=50, dice_weight=0.7, bce_weight=0.3)` | `BCEDiceLoss(pos_weight=50, dice_weight=0.9, bce_weight=0.1)` |
+| Augmentation | Aug B, `n_triangles_range=(60,300)`, `triangle_max_size=13` | same | same |
+| Mask | circular, `square_size=9` (radius 4) | same | same |
+| Warm-start | config 7b's own checkpoint | **config 8's own checkpoint** | **config 8's own checkpoint** |
+
+Both warm-started from config 8's own trained checkpoint, independent
+siblings (not chained to each other). No warm-start gotcha: `pos_weight=50`
+and the loss class itself match config 8's own criterion exactly, so the
+standard `strict=False` pattern is safe.
+
 ## Held constant across configs (except where noted)
 
 - Model: `UNet(in_channels=1, out_channels=1, kernel_size=5, sigmoid=False)`
@@ -807,9 +874,9 @@ destructively touch already-correct packages.
   `wings/modeling/training/lightning-checkpoints/unet-400-online-augmentation-k5-N/`,
   named `unet-400-online-augmentation-k5-N-{epoch:02d}-{val_mean_error_px:.4f}-online-augmentation-k5-N.ckpt`
 
-Same pattern for configs 4b/4c/4d/5b/6a/6b/6c/6d/7b/8a/8b/8c/8d (`N` = `"4b"`/
-`"4c"`/`"4d"`/`"5b"`/`"6a"`/`"6b"`/`"6c"`/`"6d"`/`"7b"`/`"8a"`/`"8b"`/`"8c"`/
-`"8d"`, e.g. `unet-400-online-augmentation-k5-6a`).
+Same pattern for configs 4b/4c/4d/5b/6a/6b/6c/6d/7b/8a/8b/8c/8d/8e/8f
+(`N` = `"4b"`/`"4c"`/`"4d"`/`"5b"`/`"6a"`/`"6b"`/`"6c"`/`"6d"`/`"7b"`/`"8a"`/
+`"8b"`/`"8c"`/`"8d"`/`"8e"`/`"8f"`, e.g. `unet-400-online-augmentation-k5-6a`).
 
 ## Adding more configs later
 
