@@ -177,15 +177,95 @@ def fit_rectangle_preprocess(img: torch.Tensor) -> tuple[torch.Tensor, int, int]
     return img, pad_left, pad_bottom
 
 
-def mask_to_coords(mask):
+def _split_blob_watershed(roi_binary):
+    """roi_binary: (h, w) uint8, 0/255, a single (possibly merged) blob,
+    already isolated from any other blob's pixels. Returns a list of (x, y)
+    centroids, one per detected peak, or None if fewer than 2 peaks are
+    found (i.e. this blob isn't actually a merge)."""
+    dist = cv2.distanceTransform(roi_binary, cv2.DIST_L2, 5)
+    dist_max = dist.max()
+    if dist_max == 0:
+        return None
+
+    # Local maxima: a pixel equals its own value after a small dilation
+    # (no neighbor within the kernel is strictly larger), restricted to a
+    # fraction of the peak distance to suppress flat/noisy low-lying maxima.
+    kernel = np.ones((5, 5), np.uint8)
+    dilated = cv2.dilate(dist, kernel)
+    local_max = (dist == dilated) & (dist > 0.5 * dist_max)
+
+    n_labels, markers = cv2.connectedComponents(local_max.astype(np.uint8))
+    if n_labels <= 2:  # background (0) + at most one peak region -> not a merge
+        return None
+
+    markers = markers + 1  # cv2.watershed reserves 0 for "unknown"
+    markers[roi_binary == 0] = 0
+
+    roi_bgr = cv2.cvtColor(roi_binary, cv2.COLOR_GRAY2BGR)
+    cv2.watershed(roi_bgr, markers)
+
+    centroids = []
+    for label in range(2, n_labels + 1):
+        ys, xs = np.where(markers == label)
+        if len(xs) == 0:
+            continue
+        # float(...): xs.mean()/ys.mean() are numpy.float64 scalars, unlike
+        # cv2.moments()'s plain-Python-float centroids elsewhere in
+        # mask_to_coords. torch.tensor() infers float64 from even one
+        # numpy.float64 element in an otherwise plain-float list, silently
+        # promoting the *entire* coordinate list to double -- which then
+        # mismatches mean_coords' float32 in procrustes_align's matmul
+        # (RuntimeError: expected m1 and m2 to have the same dtype).
+        centroids.append((float(xs.mean()), float(ys.mean())))
+    return centroids
+
+
+def mask_to_coords(mask, area_ratio=1.5, pad=5):
     binary = (mask * 255).astype(np.uint8)
     _, binary = cv2.threshold(binary, 200, 255, cv2.THRESH_BINARY)
 
     contours, _ = cv2.findContours(binary, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
+    # Two landmarks close enough together in mean_coords (e.g. landmarks
+    # 1/2, the closest pair of all 19) can have their circular mask targets
+    # touch or overlap, especially at larger mask radii (see
+    # jobs/online/README.md's config 6/7 sections -- radius 4, up from 2,
+    # improved rotation robustness and DeepWings generalization but made
+    # this more likely). cv2.findContours then merges them into one blob
+    # and returns a single centroid roughly between the two true positions,
+    # instead of two. Contours anomalously larger than the image's own
+    # median (area_ratio) are treated as suspected merges: a distance
+    # transform of just that blob finds one local maximum per original
+    # circle's center, and cv2.watershed splits the blob along the "valley"
+    # between them, giving one centroid per peak instead of one for the
+    # whole merged region. Normal, isolated blobs (the vast majority) never
+    # hit this path at all, so their centroids are exactly the plain
+    # contour-moment calculation, unchanged. See
+    # notebooks/27_mask_blob_merge_fix.ipynb for why this was chosen over a
+    # simpler unconditional erosion (matches erosion's fix rate and speed,
+    # without erosion's ~0.25% chance of erasing an already-correct,
+    # separate small blob entirely).
+    areas = np.array([cv2.contourArea(c) for c in contours])
+    median_area = np.median(areas) if len(areas) >= 3 else None
+
     img_y_size = mask.shape[0]
     coordinates = []
-    for cnt in contours:
+    for cnt, area in zip(contours, areas):
+        if median_area is not None and area > area_ratio * median_area:
+            x, y, w, h = cv2.boundingRect(cnt)
+            y0, y1 = max(0, y - pad), min(binary.shape[0], y + h + pad)
+            x0, x1 = max(0, x - pad), min(binary.shape[1], x + w + pad)
+            roi = binary[y0:y1, x0:x1].copy()
+            roi_mask = np.zeros_like(roi)
+            cv2.drawContours(roi_mask, [cnt - [x0, y0]], -1, 255, thickness=cv2.FILLED)
+            roi = cv2.bitwise_and(roi, roi_mask)
+
+            split = _split_blob_watershed(roi)
+            if split:
+                for px, py in split:
+                    coordinates.append((px + x0, img_y_size - (py + y0) - 1))
+                continue
+
         M = cv2.moments(cnt)
         if M["m00"] != 0:
             cx = M["m10"] / M["m00"]  # x coordinate of centroid

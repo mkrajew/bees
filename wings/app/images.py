@@ -48,7 +48,7 @@ class WingImage:
         mask = torch.round(output).squeeze().detach().cpu().numpy()
 
         mask_coords = final_coords(mask, x_size, y_size)
-        mask_coords = torch.tensor(mask_coords)
+        mask_coords = torch.tensor(mask_coords, dtype=torch.float32)
         self._check_carefully = len(mask_coords) < 19 or len(mask_coords) > 22
 
         try:

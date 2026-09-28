@@ -611,9 +611,108 @@ config 7's own LR had likely already decayed several times by epoch 36
 so this isn't just a longer patience window on an already-shrunk LR, it's a
 genuinely fresh step size to keep improving `val_wrong_spot_count_pct` with.
 
+## Follow-up: config 7b's DeepWings result, and a notebook 26 bug
+
+Notebook 26 on config 7b's checkpoint: mean positional precision **0.9373**
+over all wings, unfiltered (paper: 0.943 -- only 0.0057 away), and **0.9542**
+restricted to wings with a plausible (16-22) predicted point count --
+already *above* the paper's average. First read of the reliable-point-count
+percentage said 74.2%, which looked like a large, broad problem; that number
+turned out to be stale (the notebook's `reliable` bounds had been changed to
+18-22 temporarily to check something else, then changed back, without
+re-running the cell, so the file's *source* said `[16, 22]` while its saved
+*output* still reflected the older 18-22 run -- a plain Jupyter
+edited-but-not-rerun state, not a code bug). Re-running the notebook against
+the current, correct 16-22 bounds gives **90.5%** -- close to the paper's own
+91.8% exact-19 rate (not quite apples-to-apples: we measure a wider 16-22
+window, so our true exact-19 rate is somewhat lower than 90.5%, but the gap
+is nowhere near what 74.2% suggested).
+
+This reframes the remaining gap: it's small (0.0057 on the headline number)
+and concentrated in the ~9.5% hard tail, not a broad problem across the
+dataset. Inspecting that tail directly (notebook 26's worst-offenders
+section, already computed) shows a consistent pattern across every example
+checked: dense fields of small, dark, triangular debris covering the wing
+*and* the surrounding background, causing gross **over-detection** (20-35
+predicted points against 19 ground truth) -- the model treating debris
+speckles as landmarks -- not the under-detection/merging this series started
+out targeting. The debris density in these real photos visibly exceeds what
+config 7b's augmentation (40-240 triangles, size 2-11) produces.
+
+## Config 8 -- another gentle triangle-noise increase, informed by real DeepWings failures
+
+A follow-up on config 7b's checkpoint. Given the gap above is now small and
+narrow (one hard tail, not a broad problem), this is a deliberately gentle
+step, same reasoning as config 7's own choice of 11 over an initially
+considered 20 (see notebook 24): raises `n_triangles_range` (40-240 -> 60-300)
+and `triangle_max_size` (11 -> 13) moderately rather than jumping straight to
+match the worst-offender images' apparent density, which would risk
+re-introducing the occlusion/legibility problem notebook 24 found at more
+aggressive values.
+
+| | Config 7b | Config 8 |
+|---|---|---|
+| Loss | `BCEDiceLoss(pos_weight=50, dice_weight=0.5, bce_weight=0.5)` | same |
+| Augmentation | Aug B, `n_triangles_range=(40,240)`, `triangle_max_size=11` | Aug B, **`n_triangles_range=(60,300)`**, **`triangle_max_size=13`** |
+| Mask | circular, `square_size=9` (radius 4) | same |
+| Warm-start | config 7's own checkpoint | **config 7b's own checkpoint** |
+
+Warm-started from config 7b's own trained checkpoint. No warm-start gotcha:
+`pos_weight=50` matches config 7b's own criterion exactly, so the standard
+`strict=False` pattern is safe.
+
+## Config 8a-8c -- loss family: WeightedDiceLoss, never tried in this series
+
+Three follow-ups on top of config 8's checkpoint, testing `WeightedDiceLoss`
+(a Dice-based loss with per-pixel class weighting, `wings/modeling/loss.py`)
+in place of `BCEDiceLoss` -- used in every config so far (1-8) but never
+itself tried in the online-augmentation series.
+
+**A sigmoid-pairing correction made while building these**: `BCEDiceLoss`
+and `WeightedDiceLoss` need *opposite* `UNet(sigmoid=...)` settings.
+`BCEDiceLoss.forward(logits, targets)` applies sigmoid itself
+(`nn.BCEWithLogitsLoss` for its BCE term, an explicit `torch.sigmoid(logits)`
+for its Dice term) -- it needs raw logits in, `sigmoid=False` (every config
+1-8 uses this, correctly). `WeightedDiceLoss.forward(y_pred, y_true)` has no
+sigmoid anywhere in its own code and uses `y_pred` directly -- it
+mathematically expects actual [0, 1] probabilities, `sigmoid=True`. It first
+looked like the original pre-online-augmentation baseline
+(`wings/modeling/training/bced_unet.py`, ~1.15-1.18px test error) had already
+validated `WeightedDiceLoss` paired with `sigmoid=False` (a mismatched but
+apparently-proven combination worth reproducing faithfully) -- but
+`git log --all -- wings/modeling/training/bced_unet.py` shows that file's
+`WeightedDiceLoss(landmark_weight=100)` line was introduced in a commit dated
+2026-06-27, over a month after the wandb runs that actually achieved
+1.15-1.18px (created 2026-05-11 to 05-13). Those runs ran the version of the
+file live at the time -- `BCEDiceLoss(pos_weight=50, dice_weight=0.8,
+bce_weight=0.2)`, correctly paired with `sigmoid=False` -- and there's no
+evidence the later `WeightedDiceLoss` line was ever actually trained to
+completion. So there was no proven `WeightedDiceLoss`+`sigmoid=False` recipe
+to preserve; configs 8a-8c use the mathematically correct pairing,
+`sigmoid=True`.
+
+| | 8a | 8b | 8c |
+|---|---|---|---|
+| Loss | `WeightedDiceLoss(landmark_weight=50)` | `WeightedDiceLoss(landmark_weight=75)` | `WeightedDiceLoss(landmark_weight=100)` |
+| Everything else | Aug B (config 8's `n_triangles_range=(60,300)`, `triangle_max_size=13`), circular mask radius 4, `sigmoid=True` | same | same |
+| Warm-start | config 8's own checkpoint | config 8's own checkpoint | config 8's own checkpoint |
+
+All three are independent siblings warm-started from config 8 directly (not
+chained to each other). `background_weight=1.0` (the class default) held
+constant across all three -- only `landmark_weight` varies, mirroring how
+configs 6a/6b mapped out `BCEDiceLoss`'s `pos_weight` response. `WeightedDiceLoss`
+registers no torch buffers (`landmark_weight`/`background_weight` are plain
+Python floats, not `nn.Module` buffers) -- unlike `BCEDiceLoss`'s `pos_weight`
+(see `augmented_unet_4b.py`'s docstring for that gotcha) -- so there's no
+overlapping criterion state to accidentally inherit from config 8's
+checkpoint; `strict=False` is safe here for a different reason than usual (no
+shared keys at all, not matching values at a shared key).
+
 ## Held constant across configs (except where noted)
 
 - Model: `UNet(in_channels=1, out_channels=1, kernel_size=5, sigmoid=False)`
+  (configs 8a-8c are the sole exception, `sigmoid=True` -- `WeightedDiceLoss`
+  needs actual probabilities, not logits -- see their section above)
 - Warm-start checkpoint: `models/new_unet/unet-final-k5.ckpt`, loaded with
   `strict=False` (its saved criterion state doesn't necessarily match every
   config's criterion here -- e.g. `BCEDiceLoss`'s `pos_weight` buffer isn't
@@ -621,13 +720,17 @@ genuinely fresh step size to keep improving `val_wrong_spot_count_pct` with.
   actual UNet weights still load exactly; verified for both loss classes)
 - Mask shape/size: square, `square_size=5` (config 4c changes size to 3;
   configs 4d, 5, 5b and 6a-6d change shape to circle at the same radius 2;
-  config 6 changes shape to circle *and* size, radius 4 -- see above)
+  config 6 onward changes shape to circle *and* size, radius 4 -- see above)
 - `rotation_p=1.0` (configs 5 at 0.3 and 5b/6a-6d at 0.8 are the exceptions;
-  config 6/7 are back to the default 1.0 -- see above)
-- `triangle_min_size=2`, `triangle_max_size=6` (dataclass defaults; config 7
-  changes `triangle_max_size` to 11 -- see above)
+  config 6 onward is back to the default 1.0 -- see above)
+- `triangle_min_size=2` (dataclass default, unchanged everywhere);
+  `triangle_max_size=6` (dataclass default; config 7/7b changes it to 11,
+  config 8 onward to 13 -- see above)
+- `n_triangles_range=(10,60)` (dataclass default; every config so far
+  overrides this to `(40,240)`, config 8 onward to `(60,300)` -- see above)
 - `num_epochs=100`, `batch_size=12`, `num_workers=8`
-- `early_stop_patience=25`, `early_stop_min_delta=0.01` (monitor: `val_mean_error_px`)
+- `early_stop_patience=25` (configs 7b onward raise this to 45 -- see above),
+  `early_stop_min_delta=0.01` (monitor: `val_mean_error_px`)
 - Data source: `data/processed/cropped/` (plain YOLO-cropped, no offline augmentation)
 - Wandb project: `wingai-online-augmentation` (separate from the other training
   scripts' shared `wingai` project), logs saved under
@@ -674,8 +777,9 @@ destructively touch already-correct packages.
   `wings/modeling/training/lightning-checkpoints/unet-400-online-augmentation-k5-N/`,
   named `unet-400-online-augmentation-k5-N-{epoch:02d}-{val_mean_error_px:.4f}-online-augmentation-k5-N.ckpt`
 
-Same pattern for configs 4b/4c/4d/5b/6a/6b/6c/6d/7b (`N` = `"4b"`/`"4c"`/`"4d"`/
-`"5b"`/`"6a"`/`"6b"`/`"6c"`/`"6d"`/`"7b"`, e.g. `unet-400-online-augmentation-k5-6a`).
+Same pattern for configs 4b/4c/4d/5b/6a/6b/6c/6d/7b/8a/8b/8c (`N` = `"4b"`/
+`"4c"`/`"4d"`/`"5b"`/`"6a"`/`"6b"`/`"6c"`/`"6d"`/`"7b"`/`"8a"`/`"8b"`/`"8c"`,
+e.g. `unet-400-online-augmentation-k5-6a`).
 
 ## Adding more configs later
 
