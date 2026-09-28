@@ -29,6 +29,16 @@ nvidia-smi
 cd "$SLURM_SUBMIT_DIR"
 
 module load uv
+
+# UV_CACHE_DIR: uv's default cache lives on node-local /local/ssd/cache/uv,
+# but .venv (on the shared NFS home dir) stores symlinks INTO that cache --
+# so a .venv populated on one node (e.g. glasser) has dangling symlinks on
+# any other node (h32/h86/gpu-s), since each node has its own separate
+# local disk. Pointing the cache at the shared home dir instead makes it
+# resolve identically everywhere. Fixes: "ImportError: cannot import name
+# 'logger' from 'loguru'" (and similar) when a job lands on a node whose
+# local cache never got populated -- see jobs/online/README.md.
+export UV_CACHE_DIR="$HOME/.cache/uv-shared"
 module load cuda/12.9
 
 uv sync
