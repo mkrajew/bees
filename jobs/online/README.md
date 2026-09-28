@@ -708,6 +708,35 @@ overlapping criterion state to accidentally inherit from config 8's
 checkpoint; `strict=False` is safe here for a different reason than usual (no
 shared keys at all, not matching values at a shared key).
 
+## Config 8d -- one step back down in mask radius (4 -> 3)
+
+A follow-up on config 8's checkpoint: identical in every respect except mask
+radius (`square_size` 9 -> 7, radius 4 -> 3). Motivated by the DeepWings
+paper's own ablation (radius 3: 88.2% exact-19 accuracy, radius 4: 91.8% --
+a real but not huge gap) together with config 8's own remaining DeepWings
+worst-offenders, which include landmark blobs merging/overlapping under the
+densest real debris (the same failure mode `mask_to_coords`'s watershed
+split targets). A smaller radius leaves more gap between adjacent landmarks'
+circles in the first place (roughly 2x the gap for the same landmark
+spacing), at some cost to the rotation-robustness/reliability gains radius 4
+brought over the project's earlier radius-2 configs (5/5b) -- this tests
+where radius 3 actually lands now that full rotation_p, denser triangle
+noise, and the watershed decoder fix are all already in place, rather than
+re-deriving the radius choice in isolation the way config 6 originally did.
+
+| | Config 8 | Config 8d |
+|---|---|---|
+| Loss | `BCEDiceLoss(pos_weight=50, dice_weight=0.5, bce_weight=0.5)` | same |
+| Augmentation | Aug B, `n_triangles_range=(60,300)`, `triangle_max_size=13` | same |
+| Mask | circular, `square_size=9` (radius 4) | circular, **`square_size=7`** (radius 3) |
+| Warm-start | config 7b's own checkpoint | **config 8's own checkpoint** |
+
+Warm-started from config 8's own trained checkpoint. Mask radius only
+affects target *data* generation, not the model architecture or the
+criterion's own state -- unlike a `pos_weight` change, there's no buffer/key
+overlap to worry about at all, so `strict=False` carries no gotcha in either
+direction here.
+
 ## Held constant across configs (except where noted)
 
 - Model: `UNet(in_channels=1, out_channels=1, kernel_size=5, sigmoid=False)`
@@ -720,7 +749,8 @@ shared keys at all, not matching values at a shared key).
   actual UNet weights still load exactly; verified for both loss classes)
 - Mask shape/size: square, `square_size=5` (config 4c changes size to 3;
   configs 4d, 5, 5b and 6a-6d change shape to circle at the same radius 2;
-  config 6 onward changes shape to circle *and* size, radius 4 -- see above)
+  config 6-8c change shape to circle *and* size, radius 4; config 8d back
+  down to radius 3 -- see above)
 - `rotation_p=1.0` (configs 5 at 0.3 and 5b/6a-6d at 0.8 are the exceptions;
   config 6 onward is back to the default 1.0 -- see above)
 - `triangle_min_size=2` (dataclass default, unchanged everywhere);
@@ -777,9 +807,9 @@ destructively touch already-correct packages.
   `wings/modeling/training/lightning-checkpoints/unet-400-online-augmentation-k5-N/`,
   named `unet-400-online-augmentation-k5-N-{epoch:02d}-{val_mean_error_px:.4f}-online-augmentation-k5-N.ckpt`
 
-Same pattern for configs 4b/4c/4d/5b/6a/6b/6c/6d/7b/8a/8b/8c (`N` = `"4b"`/
-`"4c"`/`"4d"`/`"5b"`/`"6a"`/`"6b"`/`"6c"`/`"6d"`/`"7b"`/`"8a"`/`"8b"`/`"8c"`,
-e.g. `unet-400-online-augmentation-k5-6a`).
+Same pattern for configs 4b/4c/4d/5b/6a/6b/6c/6d/7b/8a/8b/8c/8d (`N` = `"4b"`/
+`"4c"`/`"4d"`/`"5b"`/`"6a"`/`"6b"`/`"6c"`/`"6d"`/`"7b"`/`"8a"`/`"8b"`/`"8c"`/
+`"8d"`, e.g. `unet-400-online-augmentation-k5-6a`).
 
 ## Adding more configs later
 
