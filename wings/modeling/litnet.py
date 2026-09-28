@@ -54,6 +54,7 @@ class LitNet(L.LightningModule):
         binary_metrics = binary_stats(
             output=output,
             target=target,
+            output_is_logits=not self.model.sigmoid,
         )
 
         self.log(
@@ -81,6 +82,7 @@ class LitNet(L.LightningModule):
             x_size=x_size,
             y_size=y_size,
             mean_coords=self.mean_coords,
+            output_is_logits=not self.model.sigmoid,
         )
 
         self.val_error_distances.extend(error_distances)
@@ -109,6 +111,7 @@ class LitNet(L.LightningModule):
         binary_metrics = binary_stats(
             output=output,
             target=target,
+            output_is_logits=not self.model.sigmoid,
         )
 
         self.log(
@@ -136,6 +139,7 @@ class LitNet(L.LightningModule):
             x_size=x_size,
             y_size=y_size,
             mean_coords=self.mean_coords,
+            output_is_logits=not self.model.sigmoid,
         )
 
         self.test_error_distances.extend(error_distances)
