@@ -769,28 +769,6 @@ mid-swap of that exact package. Plain `uv sync` is a fast no-op when the
 environment already matches `pyproject.toml`/`uv.lock`, so it doesn't
 destructively touch already-correct packages.
 
-**Why every job script exports `UV_CACHE_DIR="$HOME/.cache/uv-shared"`
-before `uv sync`:** the *same* `ImportError: cannot import name 'logger'
-from 'loguru'` resurfaced later, this time completely reproducibly (a single
-job, run alone, with nothing else touching the venv) -- a different cause
-with an identical symptom. uv's default cache lives on node-local
-`/local/ssd/cache/uv`, but `.venv` (on the shared NFS home directory) stores
-its installed packages as *symlinks into that cache*
-(`.venv/lib/python3.12/site-packages/torch/__init__.py ->
-/local/ssd/cache/uv/archive-v0/<hash>/torch/__init__.py`, confirmed with
-`ls -la`). Every config in this series happened to run on `glasser`
-exclusively (the only node matching `--gres=gpu:geforce_rtx_4090:1`), so
-this was invisible until jobs started landing on other nodes (`h86`,
-`gpu-s`) while diagnosing Blackwell support -- `.venv`'s symlinks, populated
-from `glasser`'s local cache, are simply dangling on any node with its own
-separate local disk. `uv sync` alone doesn't detect or repair this (it only
-checks that the lockfile matches, not that linked files actually resolve),
-so the fix has to be a cache location that resolves identically everywhere:
-the shared home directory instead of node-local storage. A one-time
-`uv sync --reinstall` (with this export already in place) repopulates the
-shared cache correctly; after that, plain `uv sync` behaves correctly on
-every node.
-
 ## Naming per config `N`
 
 - Run name: `online-augmentation-k5-N`
