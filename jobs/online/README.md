@@ -804,6 +804,62 @@ siblings (not chained to each other). No warm-start gotcha: `pos_weight=50`
 and the loss class itself match config 8's own criterion exactly, so the
 standard `strict=False` pattern is safe.
 
+## Follow-up: configs 8d/8e/8f all beat the paper *and* config 8
+
+Notebook 26 positional precision (headline, all wings unfiltered), config 8
+as the reference point:
+
+| | precision | vs. config 8 |
+|---|---|---|
+| config 8 | 0.9463 | -- |
+| config 8d (radius 3) | **0.9502** | +0.0039 |
+| config 8e (dice_weight 0.7) | 0.9475 | +0.0012 |
+| config 8f (dice_weight 0.9) | 0.9479 | +0.0016 |
+
+All three beat both config 8 and the paper's 0.943. Radius gave the single
+largest gain; dice_weight 0.7 -> 0.9 only gained +0.0004 more, a shrinking
+return. Since radius and dice_weight were only ever changed one at a time
+relative to config 8, it's still unknown whether they're independent
+(stacking) or redundant (diminishing once combined) -- configs 9a-9e below
+test exactly that, warm-started from 8d (not from config 8 directly), so the
+model doesn't have to re-derive the radius-3 adaptation while also absorbing
+a loss change.
+
+## Config 9a-9e -- do radius and loss changes stack?
+
+Five siblings, all warm-started from config 8d specifically (not config 8),
+each changing exactly one more variable on top of 8d's radius 3:
+
+| | `pos_weight` | `dice_weight` | warm-start mechanism |
+|---|---|---|---|
+| 9a | 50 | 0.7 (= config 8e's value) | standard `strict=False` |
+| 9b | 50 | 0.9 (= config 8f's value) | standard `strict=False` |
+| 9c | 50 (inert) | 1.0 (pure Dice, `bce_weight=0`) | standard `strict=False` |
+| 9d | **100** | 0.5 (config 8d's own value) | **weights-only** (see below) |
+| 9e | **100** | 0.7 | **weights-only** |
+
+**9a/9b** directly test whether config 8e/8f's dice_weight gains and config
+8d's radius gain stack, by combining each with radius 3 instead of radius 4.
+**9c** pushes dice_weight to its extreme (pure Dice) since 8e -> 8f's gain
+was already shrinking (+0.0004) -- checks whether the trend continues,
+plateaus, or reverses at the limit, rather than assuming 0.9 was close
+enough to the top. **9d** tests `pos_weight=100` -- planned once as configs
+6a/6b (on top of config 5b) but never actually launched (no wandb run
+exists, same as 6c/6d -- dropped for the same reason, the pivot to config
+6's radius-4 mask) -- a genuinely untested axis, now combined with radius 3.
+**9e** combines 9d's `pos_weight=100` with 9a's `dice_weight=0.7`, asking the
+same stacking question one level further.
+
+**9d/9e need the weights-only warm-start**, not the standard
+`train(..., checkpoint_path, strict=False)` pattern the other three use:
+`pos_weight` changes relative to config 8d's own criterion (50 -> 100), and
+`BCEWithLogitsLoss`'s `pos_weight` is a persistent buffer under the same key
+in both criteria -- `strict=False` only ignores missing/unexpected keys, it
+does not stop a matching key's *value* from being overwritten by the
+checkpoint's stored one (first found in `augmented_unet_4b.py`, same fix
+applied in `augmented_unet_6a/6b/6d.py`). 9d/9e instead manually load only
+the UNet's own weights from 8d's checkpoint and call `train(..., path=None)`.
+
 ## Held constant across configs (except where noted)
 
 - Model: `UNet(in_channels=1, out_channels=1, kernel_size=5, sigmoid=False)`
@@ -874,9 +930,10 @@ destructively touch already-correct packages.
   `wings/modeling/training/lightning-checkpoints/unet-400-online-augmentation-k5-N/`,
   named `unet-400-online-augmentation-k5-N-{epoch:02d}-{val_mean_error_px:.4f}-online-augmentation-k5-N.ckpt`
 
-Same pattern for configs 4b/4c/4d/5b/6a/6b/6c/6d/7b/8a/8b/8c/8d/8e/8f
+Same pattern for configs 4b/4c/4d/5b/6a/6b/6c/6d/7b/8a/8b/8c/8d/8e/8f/9a/9b/9c/9d/9e
 (`N` = `"4b"`/`"4c"`/`"4d"`/`"5b"`/`"6a"`/`"6b"`/`"6c"`/`"6d"`/`"7b"`/`"8a"`/
-`"8b"`/`"8c"`/`"8d"`/`"8e"`/`"8f"`, e.g. `unet-400-online-augmentation-k5-6a`).
+`"8b"`/`"8c"`/`"8d"`/`"8e"`/`"8f"`/`"9a"`/`"9b"`/`"9c"`/`"9d"`/`"9e"`, e.g.
+`unet-400-online-augmentation-k5-6a`).
 
 ## Adding more configs later
 
