@@ -1,13 +1,18 @@
+import json
+
 import lightning as L
 import torch
+import wandb
 import torch.utils.data as data
 from lightning.pytorch.callbacks import ModelCheckpoint, LearningRateMonitor
 from lightning.pytorch.callbacks.early_stopping import EarlyStopping
 from lightning.pytorch.loggers import WandbLogger, CSVLogger
+from loguru import logger
 
-from wings.modeling.litnet import LitNet
+from wings.modeling.litnet import LitNet, compute_statistics
 from wings.config import PROCESSED_DATA_DIR
 from wings.transforms import seed_worker
+from wings.deepwings_eval import evaluate_checkpoint_on_deepwings
 
 
 def train(
@@ -80,8 +85,14 @@ def train(
         version=params["run_name"],
     )
 
+    # Both callbacks monitor the *smoothed* metric (LitNet.on_validation_epoch_end,
+    # a trailing moving average over `smooth_window` epochs), not the raw
+    # per-epoch val_mean_error_px: across the online-augmentation series, the
+    # raw "best" epoch landed on epoch 5 for nearly every config, with more
+    # same-run epoch-to-epoch noise than the actual gap between configs --
+    # i.e. the raw signal was picking up noise, not real differences.
     early_stop_callback = EarlyStopping(
-        monitor="val_mean_error_px",
+        monitor="val_mean_error_px_smooth",
         min_delta=params["early_stop_min_delta"],
         patience=params["early_stop_patience"],
         verbose=False,
@@ -89,9 +100,15 @@ def train(
     )
 
     checkpoint_callback = ModelCheckpoint(
-        save_top_k=2,
+        # Raised from 2: the smoothed metric picks a more trustworthy single
+        # winner than the raw one did, but val_wrong_spot_count_pct_smooth
+        # and val_loss_smooth can still rank a nearby epoch differently --
+        # keeping the top 5 by the primary smoothed metric leaves real
+        # candidates on disk to check against those other two by hand
+        # instead of only ever having the one epoch this callback picked.
+        save_top_k=5,
         save_last=True,
-        monitor="val_mean_error_px",
+        monitor="val_mean_error_px_smooth",
         mode="min",
         dirpath=params["checkpoint_save_dir"],
         filename=params["checkpoint_filename"],
@@ -137,6 +154,109 @@ def train(
     trainer.fit(lit_net, train_dataloader, val_dataloader)
 
     trainer.test(ckpt_path="best", dataloaders=test_dataloader)
+
+    # Score every checkpoint this run actually saved (the top save_top_k by
+    # val_mean_error_px_smooth, plus save_last) on both our own held-out
+    # test set AND DeepWings' published one, side by side in one report --
+    # DeepWings is the evaluation neither training nor validation ever
+    # touches, so it isn't subject to the per-epoch noise that motivated
+    # smoothing val_mean_error_px in the first place (see litnet.py).
+    #
+    # The our-test-set half is done with a fresh model/LitNet per checkpoint
+    # rather than by looping trainer.test(ckpt_path=...) on the existing
+    # `trainer`: that would re-log through wandb_logger each time and
+    # repeatedly overwrite the run's test_mean_error_px *summary*, which the
+    # single trainer.test(ckpt_path="best", ...) call just above is relied
+    # on elsewhere (comparing configs 8/8a-9e) to hold specifically the
+    # *best* checkpoint's result, not whichever one this loop tests last.
+    checkpoint_paths = sorted(set(checkpoint_callback.best_k_models.keys()))
+    if checkpoint_callback.last_model_path:
+        checkpoint_paths.append(checkpoint_callback.last_model_path)
+    checkpoint_paths = sorted(set(checkpoint_paths))
+
+    eval_device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    results = []
+    for ckpt_path in checkpoint_paths:
+        entry = {"checkpoint": str(ckpt_path)}
+
+        try:
+            eval_model = type(model)(
+                in_channels=1, out_channels=1, kernel_size=5, sigmoid=model.sigmoid
+            )
+            eval_lit_net = LitNet.load_from_checkpoint(
+                ckpt_path,
+                model=eval_model,
+                criterion=params["criterion"],
+                num_epochs=1,
+                mean_coords=mean_coords,
+                strict=False,
+            )
+            eval_lit_net.eval()
+            eval_lit_net.to(eval_device)
+
+            error_distances, wrong_spot_count = [], []
+            with torch.no_grad():
+                for bx, _, bcoords, (bx_size, by_size) in test_dataloader:
+                    output = eval_lit_net.model(bx.to(eval_device))
+                    dists, wrong = compute_statistics(
+                        output=output,
+                        coords=bcoords,
+                        x_size=bx_size,
+                        y_size=by_size,
+                        mean_coords=mean_coords,
+                        output_is_logits=not eval_model.sigmoid,
+                    )
+                    error_distances.extend(dists)
+                    wrong_spot_count.extend(wrong)
+
+            distances = torch.tensor(error_distances)
+            entry["our_test_mean_error_px"] = (
+                distances.mean().item() if len(distances) else float("nan")
+            )
+            entry["our_test_median_error_px"] = (
+                distances.median().item() if len(distances) else float("nan")
+            )
+            entry["our_test_wrong_spot_count_pct"] = (
+                torch.tensor(wrong_spot_count).mean().item() * 100.0
+                if wrong_spot_count
+                else float("nan")
+            )
+
+            del eval_lit_net, eval_model
+            torch.cuda.empty_cache()
+        except Exception as e:
+            logger.warning(f"Our-test-set evaluation failed for {ckpt_path}: {e!r}")
+
+        try:
+            dw_result = evaluate_checkpoint_on_deepwings(
+                ckpt_path, mean_coords, sigmoid=model.sigmoid
+            )
+            entry["deepwings_precision_mean"] = dw_result["precision_mean"]
+            entry["deepwings_precision_median"] = dw_result["precision_median"]
+            entry["deepwings_reliable_pct"] = dw_result["reliable_pct"]
+            entry["deepwings_n_samples"] = dw_result["n_samples"]
+        except Exception as e:
+            logger.warning(f"DeepWings evaluation failed for {ckpt_path}: {e!r}")
+
+        results.append(entry)
+        logger.info(f"Checkpoint eval [{ckpt_path}]: {entry}")
+
+    if results:
+        report_path = params["checkpoint_save_dir"] / "checkpoint_eval.json"
+        with open(report_path, "w") as f:
+            json.dump(results, f, indent=2)
+        logger.info(f"Saved combined checkpoint evaluation report to {report_path}")
+
+        columns = sorted({k for r in results for k in r})
+        wandb_logger.experiment.log(
+            {
+                "checkpoint_eval": wandb.Table(
+                    columns=columns,
+                    data=[[r.get(c) for c in columns] for r in results],
+                )
+            }
+        )
+
     wandb_logger.experiment.finish()
 
     del model

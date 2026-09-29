@@ -860,6 +860,69 @@ checkpoint's stored one (first found in `augmented_unet_4b.py`, same fix
 applied in `augmented_unet_6a/6b/6d.py`). 9d/9e instead manually load only
 the UNet's own weights from 8d's checkpoint and call `train(..., path=None)`.
 
+## Noise fix: smoothed checkpoint selection (applies from config 10a onward)
+
+Pulling wandb histories for the full 8/8a-8f/9a-9e sweep to pick a final
+winner surfaced a problem with the selection process itself, not any one
+config: the raw per-epoch `val_mean_error_px` that `EarlyStopping`/
+`ModelCheckpoint`/the LR-plateau scheduler all monitor picked epoch 5 as
+"best" for nearly every config (8, 8d, 8e, 8f, 9a, 9c, 9d, 9e), and the
+same-run epoch-to-epoch noise in a +/-5-epoch window around that point
+(std ~0.015-0.04px) is *larger* than the actual gap between configs' best
+values (~0.001-0.003px) -- e.g. 9a's 2.1180 vs 9d's 2.1165 is well inside
+one run's own noise band. The raw signal being used to pick "the best
+epoch" can't reliably tell these configs apart at all.
+
+`LitNet.on_validation_epoch_end` (`wings/modeling/litnet.py`) now also
+computes and logs `val_mean_error_px_smooth`, `val_wrong_spot_count_pct_smooth`
+and `val_loss_smooth` -- a trailing moving average over the last
+`smooth_window` (default 5) validation epochs, maintained per-metric in
+`deque`s rather than folded into one combined score, so a config can be
+checked against all three independently (a model can be smoothed-good on
+error but not on wrong_spot_count_pct, which matters just as much -- e.g.
+9e tied 9a's test_mean_error_px but had a worse test_wrong_spot_count_pct).
+`configure_optimizers`'s `ReduceLROnPlateau` and `train.py`'s
+`EarlyStopping`/`ModelCheckpoint` now monitor `val_mean_error_px_smooth`
+instead of the raw value. `ModelCheckpoint`'s `save_top_k` is raised from 2
+to 5: the smoothed metric picks a more trustworthy single winner than the
+raw one did, but the other two smoothed metrics can still rank a nearby
+epoch differently, so keeping several real candidate checkpoints on disk
+lets that be checked by hand instead of only ever having the one epoch the
+callback's own primary metric picked.
+
+## Config 10a -- continues 9a with the smoothed selection, no new hyperparameter
+
+Warm-started from config 9a's own checkpoint. Loss/mask/augmentation
+unchanged from 9a (`BCEDiceLoss(pos_weight=50, dice_weight=0.7, bce_weight=0.3)`,
+circular mask radius 3, Aug B). Only `early_stop_patience` (45 -> 60) and
+`num_epochs` (100 -> 150) change, giving the now-smoother signal more room
+to keep improving before stopping rather than testing a new hyperparameter
+-- this run is specifically about getting a trustworthy, noise-resistant
+answer on top of the current best-evidenced lineage (8d -> 9a), not about
+exploring a new direction.
+
+## Config 10b -- 9a + stronger triangle noise
+
+Also warm-started from config 9a's own checkpoint. Notebook 26's DeepWings
+evaluation has consistently pointed at dense fields of small, dark
+triangular debris as the dominant remaining cause of detection failures on
+their noisiest real photos (the model over-detects debris as landmarks).
+Continues the same gentle-increase pattern config 7->8 already used
+(`triangle_max_size` 11->13, `n_triangles_range` 40-240->60-300) one more
+step on top of 9a rather than jumping straight to match the worst offenders'
+apparent density (config 7's own visual check in
+`notebooks/24_online_augmentation.ipynb` found `triangle_max_size=20`
+already started obscuring venation at the existing count ceiling):
+`n_triangles_range` (60,300) -> (80,360), `triangle_max_size` 13 -> 16.
+Loss and mask unchanged from 9a.
+
+Not pursued for this round: pushing `pos_weight` further on top of 9a's
+recipe. 9e already tested `pos_weight=100` combined with `dice_weight=0.7`
+(the same combination, just on 8d's radius directly) and came out *worse*
+on `test_wrong_spot_count_pct` than 9a alone (2.03% vs 1.89%) for the same
+`test_mean_error_px` (2.014px both) -- no evidence that axis helps once
+`dice_weight=0.7` is already in place.
+
 ## Held constant across configs (except where noted)
 
 - Model: `UNet(in_channels=1, out_channels=1, kernel_size=5, sigmoid=False)`
@@ -930,9 +993,9 @@ destructively touch already-correct packages.
   `wings/modeling/training/lightning-checkpoints/unet-400-online-augmentation-k5-N/`,
   named `unet-400-online-augmentation-k5-N-{epoch:02d}-{val_mean_error_px:.4f}-online-augmentation-k5-N.ckpt`
 
-Same pattern for configs 4b/4c/4d/5b/6a/6b/6c/6d/7b/8a/8b/8c/8d/8e/8f/9a/9b/9c/9d/9e
+Same pattern for configs 4b/4c/4d/5b/6a/6b/6c/6d/7b/8a/8b/8c/8d/8e/8f/9a/9b/9c/9d/9e/10a/10b
 (`N` = `"4b"`/`"4c"`/`"4d"`/`"5b"`/`"6a"`/`"6b"`/`"6c"`/`"6d"`/`"7b"`/`"8a"`/
-`"8b"`/`"8c"`/`"8d"`/`"8e"`/`"8f"`/`"9a"`/`"9b"`/`"9c"`/`"9d"`/`"9e"`, e.g.
+`"8b"`/`"8c"`/`"8d"`/`"8e"`/`"8f"`/`"9a"`/`"9b"`/`"9c"`/`"9d"`/`"9e"`/`"10a"`/`"10b"`, e.g.
 `unet-400-online-augmentation-k5-6a`).
 
 ## Adding more configs later

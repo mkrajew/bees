@@ -1,3 +1,5 @@
+from collections import deque
+
 import lightning as L
 import torch
 import torch.nn as nn
@@ -14,6 +16,7 @@ class LitNet(L.LightningModule):
         criterion: nn.Module = DiceLoss(),
         num_epochs: int = 60,
         mean_coords=None,
+        smooth_window: int = 5,
     ) -> None:
         super().__init__()
         self.model = model
@@ -22,6 +25,23 @@ class LitNet(L.LightningModule):
         self.mean_coords = mean_coords
 
         self.mse_test = torchmetrics.regression.MeanSquaredError()
+
+        # Trailing moving average over the last `smooth_window` validation
+        # epochs, logged alongside the raw per-epoch values (see
+        # on_validation_epoch_end). Checkpointing/early-stopping/LR-plateau
+        # on the raw val_mean_error_px alone picks up single-epoch noise --
+        # across the online-augmentation series, the "best" raw epoch landed
+        # on epoch 5 for nearly every config, with a same-run epoch-to-epoch
+        # std (~0.015-0.04px) larger than the actual gap between configs'
+        # best values (~0.001-0.003px), i.e. the raw signal can't reliably
+        # tell configs apart. Smoothing three metrics (not just mean error)
+        # separately, rather than collapsing them into one weighted score,
+        # keeps them independently inspectable -- a model can be smoothed-good
+        # on error but not on wrong_spot_count_pct, which matters just as much.
+        self.smooth_window = smooth_window
+        self._val_loss_history = deque(maxlen=smooth_window)
+        self._val_mean_error_history = deque(maxlen=smooth_window)
+        self._val_wrong_pct_history = deque(maxlen=smooth_window)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         return self.model(x)
@@ -89,10 +109,37 @@ class LitNet(L.LightningModule):
         self.val_wrong_spot_count.extend(wrong_spot_count)
 
     def on_validation_epoch_end(self):
-        self.log_epoch_statistics(
+        mean_error, wrong_pct = self.log_epoch_statistics(
             error_distances=self.val_error_distances,
             wrong_spot_count=self.val_wrong_spot_count,
             prefix="val",
+        )
+
+        val_loss = self.trainer.callback_metrics.get("val_loss")
+        self._val_loss_history.append(
+            val_loss.item() if val_loss is not None else float("nan")
+        )
+        self._val_mean_error_history.append(
+            mean_error.item() if torch.is_tensor(mean_error) else float(mean_error)
+        )
+        self._val_wrong_pct_history.append(
+            wrong_pct.item() if torch.is_tensor(wrong_pct) else float(wrong_pct)
+        )
+
+        def _nanmean(values):
+            finite = [v for v in values if v == v]  # drop NaNs
+            return sum(finite) / len(finite) if finite else float("nan")
+
+        self.log("val_loss_smooth", _nanmean(self._val_loss_history), prog_bar=True)
+        self.log(
+            "val_mean_error_px_smooth",
+            _nanmean(self._val_mean_error_history),
+            prog_bar=True,
+        )
+        self.log(
+            "val_wrong_spot_count_pct_smooth",
+            _nanmean(self._val_wrong_pct_history),
+            prog_bar=True,
         )
 
     def on_test_epoch_start(self):
@@ -153,15 +200,18 @@ class LitNet(L.LightningModule):
         )
 
     def log_epoch_statistics(self, error_distances, wrong_spot_count, prefix: str):
+        """Returns (mean_error_px, wrong_spot_count_pct) as plain tensors so
+        callers (on_validation_epoch_end) can feed them into the rolling
+        smoothed-metric history without re-deriving them from logged state."""
         if len(error_distances) > 0:
             distances = torch.tensor(error_distances)
+            mean_error = distances.mean()
 
-            self.log(f"{prefix}_mean_error_px", distances.mean(), prog_bar=True)
+            self.log(f"{prefix}_mean_error_px", mean_error, prog_bar=True)
             self.log(f"{prefix}_median_error_px", distances.median(), prog_bar=True)
         else:
-            self.log(
-                f"{prefix}_mean_error_px", torch.tensor(float("nan")), prog_bar=True
-            )
+            mean_error = torch.tensor(float("nan"))
+            self.log(f"{prefix}_mean_error_px", mean_error, prog_bar=True)
             self.log(
                 f"{prefix}_median_error_px", torch.tensor(float("nan")), prog_bar=True
             )
@@ -172,6 +222,8 @@ class LitNet(L.LightningModule):
             wrong_count_rate = torch.tensor(float("nan"))
 
         self.log(f"{prefix}_wrong_spot_count_pct", wrong_count_rate, prog_bar=True)
+
+        return mean_error, wrong_count_rate
 
     def configure_optimizers(self):
         optimizer = torch.optim.AdamW(
@@ -192,7 +244,7 @@ class LitNet(L.LightningModule):
             "optimizer": optimizer,
             "lr_scheduler": {
                 "scheduler": scheduler,
-                "monitor": "val_mean_error_px",
+                "monitor": "val_mean_error_px_smooth",
                 "interval": "epoch",
                 "frequency": 1,
             },
