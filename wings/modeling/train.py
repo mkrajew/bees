@@ -57,12 +57,20 @@ def train(
         weights_only=False,
     )
 
+    # Defaults to the smoothed metric (see LitNet.on_validation_epoch_end);
+    # pass params["checkpoint_monitor"] = "val_mean_error_px" to go back to
+    # raw per-epoch monitoring (e.g. config 11, matching config 9a's own
+    # setup) -- kept in sync below across the LR scheduler, EarlyStopping and
+    # ModelCheckpoint so all three always watch the same metric.
+    monitor_metric = params.get("checkpoint_monitor", "val_mean_error_px_smooth")
+
     if path is None:
         lit_net = LitNet(
             model,
             criterion=params["criterion"],
             num_epochs=params["num_epochs"],
             mean_coords=mean_coords,
+            monitor_metric=monitor_metric,
         )
     else:
         lit_net = LitNet.load_from_checkpoint(
@@ -71,6 +79,7 @@ def train(
             criterion=params["criterion"],
             num_epochs=params["num_epochs"],
             mean_coords=mean_coords,
+            monitor_metric=monitor_metric,
             strict=strict,
         )
 
@@ -86,14 +95,16 @@ def train(
         version=params["run_name"],
     )
 
-    # Both callbacks monitor the *smoothed* metric (LitNet.on_validation_epoch_end,
-    # a trailing moving average over `smooth_window` epochs), not the raw
-    # per-epoch val_mean_error_px: across the online-augmentation series, the
-    # raw "best" epoch landed on epoch 5 for nearly every config, with more
-    # same-run epoch-to-epoch noise than the actual gap between configs --
-    # i.e. the raw signal was picking up noise, not real differences.
+    # By default both callbacks monitor the *smoothed* metric
+    # (LitNet.on_validation_epoch_end, a trailing moving average over
+    # `smooth_window` epochs), not the raw per-epoch val_mean_error_px:
+    # across the online-augmentation series, the raw "best" epoch landed on
+    # epoch 5 for nearly every config, with more same-run epoch-to-epoch
+    # noise than the actual gap between configs -- i.e. the raw signal was
+    # picking up noise, not real differences. See monitor_metric above for
+    # how to opt back into raw monitoring per-config.
     early_stop_callback = EarlyStopping(
-        monitor="val_mean_error_px_smooth",
+        monitor=monitor_metric,
         min_delta=params["early_stop_min_delta"],
         patience=params["early_stop_patience"],
         verbose=False,
@@ -109,7 +120,7 @@ def train(
         # instead of only ever having the one epoch this callback picked.
         save_top_k=5,
         save_last=True,
-        monitor="val_mean_error_px_smooth",
+        monitor=monitor_metric,
         mode="min",
         dirpath=params["checkpoint_save_dir"],
         filename=params["checkpoint_filename"],

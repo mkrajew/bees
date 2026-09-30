@@ -17,12 +17,18 @@ class LitNet(L.LightningModule):
         num_epochs: int = 60,
         mean_coords=None,
         smooth_window: int = 5,
+        monitor_metric: str = "val_mean_error_px_smooth",
     ) -> None:
         super().__init__()
         self.model = model
         self.criterion = criterion
         self.num_epochs = num_epochs
         self.mean_coords = mean_coords
+        # Which validation metric configure_optimizers' ReduceLROnPlateau
+        # watches -- kept in sync with train.py's EarlyStopping/ModelCheckpoint
+        # via params["checkpoint_monitor"], so all three either watch the
+        # smoothed metric together or the raw one together, never a mix.
+        self.monitor_metric = monitor_metric
 
         self.mse_test = torchmetrics.regression.MeanSquaredError()
 
@@ -244,7 +250,7 @@ class LitNet(L.LightningModule):
             "optimizer": optimizer,
             "lr_scheduler": {
                 "scheduler": scheduler,
-                "monitor": "val_mean_error_px_smooth",
+                "monitor": self.monitor_metric,
                 "interval": "epoch",
                 "frequency": 1,
             },

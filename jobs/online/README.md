@@ -923,6 +923,120 @@ on `test_wrong_spot_count_pct` than 9a alone (2.03% vs 1.89%) for the same
 `test_mean_error_px` (2.014px both) -- no evidence that axis helps once
 `dice_weight=0.7` is already in place.
 
+## Bug fix: coordinate truncation in mask/label generation (`wings/dataset.py`)
+
+Found while chasing why a pre-online-augmentation checkpoint
+(`unet-final-k5.ckpt`) couldn't be reproduced from its own committed
+notebook output: `WingsDatasetRectangleImages.__getitem__` and
+`generate_landmark_mask`/`generate_circular_landmark_mask` all called
+`.int()` on a scaled (therefore essentially always fractional) landmark
+coordinate. PyTorch's `.int()` truncates toward zero, it does not round to
+nearest -- whenever the fractional part is >= 0.5 (~50% of samples per
+axis), the training target lands 1px off from what round-to-nearest would
+give. This is the *training-target* pipeline, shared identically by every
+config in this file (1 through 10b) and by the pre-online-augmentation
+baseline alike -- it does not affect evaluation (`final_coords`/
+`unet_reverse_padding`, which were separately checked and left alone; see
+below) at all, only what position the model was ever shown as ground truth
+during training.
+
+Measured effect (on `unet-final-k5.ckpt` and config 10a's own checkpoint,
+full test set, exact-resize reconstruction to isolate this from unrelated
+resize-approximation error): mean error 1.26px -> 0.99px from correcting
+just the x-axis offset, a roughly *constant* (not scale-dependent --
+correlation with image size ~0) bias, consistent with a rounding bug rather
+than anything in the resize/scale math. y needed no correction, because
+`generate_landmark_mask`'s `y_size - y - 1` flip inverts the sign of
+whatever bias the same truncation introduces on that axis.
+
+Separately verified the y-flip's own `-1` is correct as-is (not part of
+this bug): mean pixel intensity at `H-y-1` vs. the no-`-1` alternative
+across all 113,141 landmarks in the PL dataset lands on the darker,
+more-vein-like pixel significantly more often (paired t-test
+p=5.4e-210) -- and `H-y` is wrong by construction anyway at `y=0` (maps to
+row `H`, which doesn't exist for a 0-indexed `[0, H-1]` image).
+
+Fixed in commit `8ef4e61` (`.int()` -> `.round().int()`, or
+`.float().round().int()` where the input's dtype isn't guaranteed). Every
+checkpoint trained before this commit has the bias baked into its learned
+weights and won't improve without retraining -- see configs 11 (this
+series) and `unet_final_k5_v2.py` (the pre-online-augmentation baseline)
+below.
+
+## Config 11 -- re-run of 9a's recipe, with the coordinate fix above
+
+Not a new hyperparameter test. Same recipe as config 9a
+(`BCEDiceLoss(pos_weight=50, dice_weight=0.7, bce_weight=0.3)`, circular
+mask radius 3, Aug B, `num_epochs=100`) -- the only thing that changed is
+`wings/dataset.py` itself (see the bug-fix section above), which this
+config picks up automatically since `build_mask_datasets`/
+`TransformedMaskDataset` generate masks fresh on every access rather than
+from a pre-built file.
+
+Deliberately does **not** carry over config 10a's smoothed-metric
+monitoring on top of 9a: it didn't earn its keep in practice, so this goes
+back to 9a's plain `val_mean_error_px` monitoring via
+`params["checkpoint_monitor"]` (new optional key, `wings/modeling/train.py`
+and `LitNet.configure_optimizers`, defaults to the smoothed metric for
+every other config so nothing else changes). Two pieces of 10a's change
+*are* kept: `ModelCheckpoint`'s `save_top_k=5` (unconditional in
+`train.py` either way -- more real candidate epochs on disk to check by
+hand) and `early_stop_patience=60` (up from 9a's own 45).
+
+Warm-started from config 9a's own checkpoint, not 10a's: 10a's actual run
+only reached epoch 8 of its planned 150 before stopping
+(`checkpoint_eval.json` on the cluster shows `last.ckpt` at epoch 8, no
+further checkpoints), barely diverged from 9a's already-converged endpoint
+-- restarting from 9a directly is cleaner than continuing an 8-epoch nudge
+off it.
+
+| | Config 9a | Config 10a | Config 11 |
+|---|---|---|---|
+| Loss | `BCEDiceLoss(pos_weight=50, dice_weight=0.7, bce_weight=0.3)` | same | same |
+| Augmentation | Aug B, `rotation_p=1.0`, triangles 60-300, size 13 | same | same |
+| Mask | circular, `square_size=7` (radius 3) | same | same |
+| Warm-start | config 8d's own checkpoint | config 9a's own checkpoint | config 9a's own checkpoint |
+| `num_epochs` / `early_stop_patience` | 100 / 45 | **150 / 60** | 100 / **60** |
+| Checkpoint monitor | `val_mean_error_px` | `val_mean_error_px_smooth` | `val_mean_error_px` |
+| `save_top_k` | 5 | 5 | 5 |
+| `wings/dataset.py` | truncates (pre-fix) | truncates (pre-fix) | **rounds (post-fix, commit `8ef4e61`)** |
+
+## Baseline redo: `unet_final_k5_v2.py` (not part of this series' numbering)
+
+Lives at `wings/modeling/training/unet_final_k5_v2.py` /
+`jobs/unet_final_k5_v2.sh` (top-level `jobs/`, not `jobs/online/` --
+this predates online augmentation entirely and doesn't use
+`TrainAugmentConfig`/`build_mask_datasets` at all). Redoes
+`unet-final-k5.ckpt`'s own recipe with the bug-fix above applied,
+warm-started from `unet-final-k5.ckpt` itself (`models/new_unet/
+unet-final-k5.ckpt`, the same path every online-augmentation config already
+warm-starts from) rather than from scratch -- cheaper, and the same
+warm-start-through-a-small-fix approach config 11 takes on the other side.
+Loss class and `pos_weight` match the checkpoint's own saved criterion
+exactly (see the recipe below), so there's no warm-start gotcha; the
+standard `strict=True` load is safe as-is. `early_stop_patience=60`
+(up from the original recipe's 25, matching config 11's bump).
+
+Recipe reconstructed via the same git-archaeology this README already did
+once, in the "Config 8a-8c" section above: `BCEDiceLoss(pos_weight=50,
+dice_weight=0.8, bce_weight=0.2)`, `kernel_size=5`, `sigmoid=False`, mask
+`square_size=3` (square, not circular -- `generate_circular_landmark_mask`
+didn't exist yet at this point in the project).
+
+**Needs an extra step this series' configs don't**: this offline pipeline
+(`MaskRectangleDataset`/`load_datasets`) reads pre-built
+`data/processed/mask_datasets/rectangle-cropped/*.pth` files rather than
+generating masks fresh, so the fix only takes effect once those files are
+rebuilt -- `jobs/unet_final_k5_v2.sh` does this itself via a dedicated
+`wings/modeling/training/rebuild_baseline_k5_datasets.py`, **not**
+`wings/dataset.py`'s own `__main__`: that one has since moved to
+`square_size=5` and writes `*_sq5.pth`-suffixed files for a different,
+later need in this project (found the hard way -- it silently produced the
+wrong-suffixed files on a first attempt, never touching the unsuffixed
+files this baseline actually reads). `MaskRectangleDataset.split()`'s
+default `seed=42` keeps the same train/val/test membership as before, so
+rebuilding doesn't change which images land in the held-out test set.
+
 ## Held constant across configs (except where noted)
 
 - Model: `UNet(in_channels=1, out_channels=1, kernel_size=5, sigmoid=False)`
