@@ -3,16 +3,22 @@ Redo of unet-final-k5.ckpt's own recipe, warm-started from that checkpoint,
 now that wings/dataset.py's coordinate-rounding bug is fixed (commit
 8ef4e61).
 
-Recipe confirmed via git archaeology in jobs/online/README.md's "Config
-8a-8c" section: unet-final-k5.ckpt's own wandb runs (created 2026-05-11 to
-05-13, ~1.15-1.18px test error) predate the WeightedDiceLoss line later
-added to wings/modeling/training/bced_unet.py by over a month, so the
-*actual* live config at training time was BCEDiceLoss(pos_weight=50,
-dice_weight=0.8, bce_weight=0.2), sigmoid=False -- not whatever
-bced_unet.py/unet_kernel_5x5.py happen to say today (both have been hand-
-edited in place for later, unrelated experiments since). Mask square_size=3
-is separately confirmed in the same README's "Config 4c" section (checked
-against notebooks/04_save_datasets.ipynb and the commit that produced it).
+Recipe: pos_weight=50 confirmed directly from unet-final-k5.ckpt's own
+saved state dict (criterion.bce.pos_weight == 50.0). dice_weight/bce_weight
+are NOT buffers, so they don't appear in the checkpoint -- jobs/online/
+README.md's "Config 8a-8c" section previously claimed 0.8/0.2 via git
+archaeology on wings/modeling/training/bced_unet.py, but that's wrong:
+reconstructing the implied BCE component from the *live* run's own
+val_loss and val_dice history (val_loss = bce_weight*BCE + dice_weight*
+(1-val_dice), same formula as BCEDiceLoss.forward) gives a BCE that's
+consistently *negative* at every one of its 26 epochs under 0.8/0.2 --
+impossible, since BCE can't be negative -- and a small, stable, positive
+~0.033-0.035 under 0.5/0.5 (BCEDiceLoss()'s bare defaults) instead. Matches
+the two earliest committed versions of this run_num-4-5 lineage
+(277cc35/6333ed5), both plain BCEDiceLoss() with no weight overrides.
+Mask square_size=3 is separately confirmed in the README's "Config 4c"
+section (checked against notebooks/04_save_datasets.ipynb and the commit
+that produced it) and isn't affected by this correction.
 
 Warm-started from unet-final-k5.ckpt itself (models/new_unet/unet-final-k5.ckpt,
 the same path every online-augmentation config already warm-starts from):
@@ -47,7 +53,7 @@ from wings.modeling.loss import BCEDiceLoss
 from wings.modeling.train import train
 from wings.modeling.unet import UNet
 
-run_num = 1
+run_num = 2  # 1 was launched with the wrong dice_weight/bce_weight (0.8/0.2); see docstring
 run_name = "weighted-bce-dice-kernel-fix"
 model_name = "unet-400-bce-dice-kernel-fix"
 PARAMETERS = {
@@ -63,7 +69,7 @@ PARAMETERS = {
     "num_workers": 8,
     "early_stop_min_delta": 0.01,
     "early_stop_patience": 60,
-    "criterion": BCEDiceLoss(pos_weight=50, dice_weight=0.8, bce_weight=0.2),
+    "criterion": BCEDiceLoss(pos_weight=50, dice_weight=0.5, bce_weight=0.5),
 }
 
 if __name__ == "__main__":

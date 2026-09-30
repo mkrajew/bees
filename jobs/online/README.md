@@ -683,13 +683,19 @@ apparently-proven combination worth reproducing faithfully) -- but
 `git log --all -- wings/modeling/training/bced_unet.py` shows that file's
 `WeightedDiceLoss(landmark_weight=100)` line was introduced in a commit dated
 2026-06-27, over a month after the wandb runs that actually achieved
-1.15-1.18px (created 2026-05-11 to 05-13). Those runs ran the version of the
-file live at the time -- `BCEDiceLoss(pos_weight=50, dice_weight=0.8,
-bce_weight=0.2)`, correctly paired with `sigmoid=False` -- and there's no
-evidence the later `WeightedDiceLoss` line was ever actually trained to
-completion. So there was no proven `WeightedDiceLoss`+`sigmoid=False` recipe
-to preserve; configs 8a-8c use the mathematically correct pairing,
-`sigmoid=True`.
+1.15-1.18px (created 2026-05-11 to 05-13). Those runs ran some version of
+`BCEDiceLoss(pos_weight=50, ...)`, correctly paired with `sigmoid=False` --
+and there's no evidence the later `WeightedDiceLoss` line was ever actually
+trained to completion. So there was no proven `WeightedDiceLoss`+
+`sigmoid=False` recipe to preserve; configs 8a-8c use the mathematically
+correct pairing, `sigmoid=True`. (The `dice_weight`/`bce_weight` this
+paragraph originally guessed at here -- 0.8/0.2, by analogy to nearby
+committed versions of the file -- turned out to be wrong; see the baseline
+redo section near the bottom of this file for the corrected 0.5/0.5, found
+by reconstructing the implied BCE component from this run's own val_loss/
+val_dice history. Doesn't change anything about *this* section's own
+conclusion, which only depended on `pos_weight=50`/`sigmoid=False`, not the
+exact dice/bce split.)
 
 | | 8a | 8b | 8c |
 |---|---|---|---|
@@ -1017,11 +1023,32 @@ exactly (see the recipe below), so there's no warm-start gotcha; the
 standard `strict=True` load is safe as-is. `early_stop_patience=60`
 (up from the original recipe's 25, matching config 11's bump).
 
-Recipe reconstructed via the same git-archaeology this README already did
-once, in the "Config 8a-8c" section above: `BCEDiceLoss(pos_weight=50,
-dice_weight=0.8, bce_weight=0.2)`, `kernel_size=5`, `sigmoid=False`, mask
-`square_size=3` (square, not circular -- `generate_circular_landmark_mask`
-didn't exist yet at this point in the project).
+Recipe: `kernel_size=5`, `sigmoid=False`, mask `square_size=3` (square, not
+circular -- `generate_circular_landmark_mask` didn't exist yet at this
+point in the project), `pos_weight=50` (confirmed directly from
+`unet-final-k5.ckpt`'s own saved state dict --
+`criterion.bce.pos_weight == 50.0` -- not from git archaeology, since
+`dice_weight`/`bce_weight` are plain floats and never show up in a
+checkpoint either way).
+
+**`dice_weight`/`bce_weight` correction**: the first version of this
+section (and the "Config 8a-8c" section above) guessed `0.8`/`0.2` by
+analogy to nearby committed versions of `bced_unet.py`, close in time but
+not actually the live-at-training-time version (which was never
+committed). A run of this recipe with those weights (`weighted-bce-dice-
+kernel-fix-1`) landed at `val_loss≈0.163`, visibly higher than the original
+run's `val_loss≈0.114-0.116` despite comparable positional error --
+reconstructing the implied BCE component from `val_loss = bce_weight*BCE +
+dice_weight*(1 - val_dice)` (`BCEDiceLoss.forward`'s own formula) using the
+*original* run's own logged `val_loss`/`val_dice` history gives a
+**negative** BCE at `0.8`/`0.2` on every one of its 26 epochs -- impossible,
+BCE can't be negative -- and a small, stable, positive ~0.033-0.035 at
+`0.5`/`0.5` (`BCEDiceLoss()`'s bare defaults) instead. Matches the two
+earliest committed versions of this run_num-4-5 lineage (`277cc35`,
+`6333ed5`), both plain `BCEDiceLoss()` with no weight overrides -- dice_weight/
+bce_weight were most likely just never touched between run_num 1 and 4,
+only `pos_weight`/`kernel_size`/naming changed. Corrected in run_num 2
+(`weighted-bce-dice-kernel-fix-2`); run_num 1 was cancelled.
 
 **Needs an extra step this series' configs don't**: this offline pipeline
 (`MaskRectangleDataset`/`load_datasets`) reads pre-built
