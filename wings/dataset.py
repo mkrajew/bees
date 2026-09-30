@@ -206,10 +206,10 @@ class WingsDatasetRectangleImages(WingsDataset):
             )
             self.coords_df.loc[index, "label"][::2] = (
                 self.coords_df.loc[index, "orig_label"][::2] * factor
-            ).int() + pad_left
+            ).round().int() + pad_left
             self.coords_df.loc[index, "label"][1::2] = (
                 self.coords_df.loc[index, "orig_label"][1::2] * factor
-            ).int() + pad_bottom
+            ).round().int() + pad_bottom
             self.coords_df.loc[index, "normalized"] = True
 
         labels = self.coords_df.loc[index, "label"]
@@ -225,7 +225,7 @@ def generate_landmark_mask(
     `labels` must be flat (x0, y0, x1, y1, ...) in bottom-left convention, matching
     the on-disk CSVs; `image` is used only for its (square) spatial size.
     """
-    x_coords, y_coords = labels[::2].int(), labels[1::2].int()
+    x_coords, y_coords = labels[::2].float().round().int(), labels[1::2].float().round().int()
     x_size, y_size = image.shape[2], image.shape[1]
     assert x_size == y_size, f"Expected square image, got {x_size=} {y_size=}"
     img_size = x_size
@@ -253,7 +253,7 @@ def generate_circular_landmark_mask(
     differs. `square_size` keeps its name for drop-in compatibility with
     `generate_landmark_mask` (both take the same knob; radius = square_size // 2).
     """
-    x_coords, y_coords = labels[::2].int(), labels[1::2].int()
+    x_coords, y_coords = labels[::2].float().round().int(), labels[1::2].float().round().int()
     x_size, y_size = image.shape[2], image.shape[1]
     assert x_size == y_size, f"Expected square image, got {x_size=} {y_size=}"
     img_size = x_size
