@@ -1,4 +1,5 @@
 import json
+from pathlib import Path
 
 import lightning as L
 import torch
@@ -169,10 +170,19 @@ def train(
     # single trainer.test(ckpt_path="best", ...) call just above is relied
     # on elsewhere (comparing configs 8/8a-9e) to hold specifically the
     # *best* checkpoint's result, not whichever one this loop tests last.
-    checkpoint_paths = sorted(set(checkpoint_callback.best_k_models.keys()))
-    if checkpoint_callback.last_model_path:
-        checkpoint_paths.append(checkpoint_callback.last_model_path)
-    checkpoint_paths = sorted(set(checkpoint_paths))
+    #
+    # Checkpoints are discovered by scanning checkpoint_save_dir directly,
+    # not via checkpoint_callback.best_k_models/last_model_path: on config
+    # 10a's actual run (61 epochs, 5 saved + last.ckpt on disk), that
+    # in-memory bookkeeping only yielded 1 path at this point despite 6
+    # files existing -- root cause not fully pinned down (network
+    # filesystem quirk interacting with Lightning's own tracking is the
+    # leading suspect, given this runs over NFS-mounted home dirs), but a
+    # directory scan reflects what actually got saved regardless of why the
+    # callback's own state diverged from disk.
+    checkpoint_paths = sorted(
+        str(p) for p in Path(params["checkpoint_save_dir"]).glob("*.ckpt")
+    )
 
     eval_device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     results = []
