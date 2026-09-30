@@ -1047,8 +1047,13 @@ BCE can't be negative -- and a small, stable, positive ~0.033-0.035 at
 earliest committed versions of this run_num-4-5 lineage (`277cc35`,
 `6333ed5`), both plain `BCEDiceLoss()` with no weight overrides -- dice_weight/
 bce_weight were most likely just never touched between run_num 1 and 4,
-only `pos_weight`/`kernel_size`/naming changed. Corrected in run_num 2
-(`weighted-bce-dice-kernel-fix-2`); run_num 1 was cancelled.
+only `pos_weight`/`kernel_size`/naming changed. Corrected recipe launched
+as run_num 2 (`weighted-bce-dice-kernel-fix-2`) -- run_num 1 (the wrong
+0.8/0.2 weights) had already finished by the time this was caught, with a
+genuinely good result (`test_mean_error_px=1.07`,
+`test_median_error_px=0.99`) in its own right, so it's kept as a separate
+data point rather than discarded: it just isn't a faithful reproduction of
+`unet-final-k5.ckpt`'s own recipe, which is what run_num 2 is for.
 
 **Needs an extra step this series' configs don't**: this offline pipeline
 (`MaskRectangleDataset`/`load_datasets`) reads pre-built
