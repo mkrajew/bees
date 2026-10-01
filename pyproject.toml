@@ -54,3 +54,12 @@ dev = [
     "jupyterlab>=4.5.0",
     "pytest-benchmark>=5.2.3",
 ]
+# Only for notebooks/28_deepwings_live_query.ipynb (querying DeepWings' live
+# website, which speaks the older Socket.IO v2/Engine.IO v3 protocol -- not
+# needed for training/production code). Not installed by a plain `uv sync`
+# (unlike `dev`, which is default-included) -- opt in with
+# `uv sync --group deepwings` when running that notebook.
+deepwings = [
+    "python-socketio==4.6.1",
+    "python-engineio==3.14.2",
+]
