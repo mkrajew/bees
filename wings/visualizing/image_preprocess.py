@@ -276,27 +276,45 @@ def mask_to_coords(mask, area_ratio=1.5, pad=5):
     return coordinates
 
 
+def _resized_dims(h: int, w: int, target_short: int, max_size: int) -> tuple[int, int]:
+    """Exactly replicates torchvision's internal resize-with-max_size arithmetic
+    (`torchvision.transforms.functional._compute_resized_output_size`), used by
+    `unet_fit_rectangle_preprocess`'s `F.resize(img, output_size - 1, ...,
+    max_size=output_size)` call -- so the resize scale it used can be recovered
+    exactly by `unet_reverse_padding`, rather than approximated. Pure
+    integer/float arithmetic, verified to match `F.resize`'s actual output
+    shape bit-for-bit across aspect ratios. Shared with (and originally
+    written for) `wings.transforms.KeypointAwareResizePad`, which needs this
+    same exact scale to move keypoints through the identical transform.
+    """
+    short, long = (w, h) if w <= h else (h, w)
+    new_short, new_long = target_short, int(target_short * long / short)
+    if new_long > max_size:
+        new_short, new_long = int(max_size * new_short / new_long), max_size
+    new_w, new_h = (new_short, new_long) if w <= h else (new_long, new_short)
+    return new_h, new_w
+
+
 def unet_reverse_padding(
     padded_img: torch.Tensor, w_orig: int, h_orig: int
 ) -> tuple[int, int, int, int]:
     """
     Reverses the padding added during unet_fit_rectangle_preprocess.
     Returns (pad_left, pad_top, pad_right, pad_bottom).
-    Assumes the padded image is 256x256 and resizing used max_size=256 with max dim 255.
+
+    Recovers the resize scale via `_resized_dims` (exact), rather than
+    reconstructing it from padded_img's own size via a single division and
+    rounding -- that approximation can land the resized dimensions 1px off
+    `unet_fit_rectangle_preprocess`'s actual torchvision resize for realistic
+    wing-image aspect ratios, which final_coords then amplifies into a
+    multi-pixel coordinate error (see notebooks/24_online_augmentation.ipynb
+    for a worked comparison of the two methods).
     """
     padded_h, padded_w = padded_img.shape
-    # assert padded_h == 256 and padded_w == 256, "Expected padded image to be 256x256"
 
-    # Recompute resize scale from original dimensions
-    if w_orig >= h_orig:
-        scale = padded_h / w_orig
-    else:
-        scale = padded_h / h_orig
+    resized_h, resized_w = _resized_dims(h_orig, w_orig, padded_h - 1, padded_h)
 
-    resized_w = round(w_orig * scale)
-    resized_h = round(h_orig * scale)
-
-    pad_w_total = padded_h - resized_w
+    pad_w_total = padded_w - resized_w
     pad_h_total = padded_h - resized_h
 
     pad_left = pad_w_total // 2
