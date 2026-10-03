@@ -23,7 +23,7 @@ import torch
 from torchvision import tv_tensors
 from torchvision.transforms import v2
 
-from wings.visualizing.image_preprocess import unet_fit_rectangle_preprocess
+from wings.visualizing.image_preprocess import _resized_dims, unet_fit_rectangle_preprocess
 
 
 class TriangleNoise(v2.Transform):
@@ -82,30 +82,16 @@ class TriangleNoise(v2.Transform):
         return tv_tensors.wrap(out, like=inpt)
 
 
-def _resized_dims(h: int, w: int, target_short: int, max_size: int) -> tuple[int, int]:
-    """Exactly replicates torchvision's internal resize-with-max_size arithmetic
-    (`torchvision.transforms.functional._compute_resized_output_size`) so the
-    resize scale `unet_fit_rectangle_preprocess` used can be recovered exactly,
-    rather than approximated. Pure integer/float arithmetic, verified to match
-    `F.resize`'s actual output shape bit-for-bit across aspect ratios.
-    """
-    short, long = (w, h) if w <= h else (h, w)
-    new_short, new_long = target_short, int(target_short * long / short)
-    if new_long > max_size:
-        new_short, new_long = int(max_size * new_short / new_long), max_size
-    new_w, new_h = (new_short, new_long) if w <= h else (new_long, new_short)
-    return new_h, new_w
-
-
 class KeypointAwareResizePad:
     """Joint image+keypoint version of `unet_fit_rectangle_preprocess`.
 
     Delegates the image transform entirely to `unet_fit_rectangle_preprocess` (so
     eval-path image output stays pixel-identical to today, which `final_coords`
     and the production inference path depend on), then recovers the *exact*
-    resize scale and pad amounts via `_resized_dims` (rather than approximating
-    them from the padded output, as `unet_reverse_padding` does) to move the
-    keypoints through the identical resize+pad transform with sub-pixel accuracy.
+    resize scale and pad amounts via `_resized_dims` (shared from
+    `wings.visualizing.image_preprocess`, which `unet_reverse_padding` also
+    uses for the same reason) to move the keypoints through the identical
+    resize+pad transform with sub-pixel accuracy.
     """
 
     def __init__(self, output_size: int = 400) -> None:

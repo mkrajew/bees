@@ -1007,6 +1007,37 @@ off it.
 | `save_top_k` | 5 | 5 | 5 |
 | `wings/dataset.py` | truncates (pre-fix) | truncates (pre-fix) | **rounds (post-fix, commit `8ef4e61`)** |
 
+## Config 12 -- config 11's best epoch, rotation widened to the full circle
+
+Continues config 11 from its own best epoch (epoch 38, `val_mean_error_px=1.2949`;
+saved locally as `models/final/final-rotation.ckpt`) with exactly one
+change: `rotation_degrees` widened from `(-90.0, 90.0)` to `(-180.0, 180.0)`,
+so training also covers upside-down wings -- config 11 never saw anything
+past +/-90. Everything else is config 11's.
+
+Warm-started from config 11's own `epoch=38` checkpoint in the cluster's
+`lightning-checkpoints/unet-400-online-augmentation-k5-11/` directory. The
+filename embeds that epoch's `val_mean_error_px`, so `augmented_unet_12.py`
+resolves it by globbing for `epoch=38` (and fails immediately, before
+building datasets, if there isn't exactly one match) instead of hardcoding
+the full name. Criterion class and `pos_weight` match the checkpoint's own,
+so the standard `strict=True` load is used (checked locally against
+`final-rotation.ckpt`).
+
+Because it's a warm start, compare its numbers against that checkpoint's
+own (`final-rotation.ckpt`: our-test-set and DeepWings precision), not
+against config 11's later epochs.
+
+| | Config 11 | Config 12 |
+|---|---|---|
+| Loss | `BCEDiceLoss(pos_weight=50, dice_weight=0.7, bce_weight=0.3)` | same |
+| Augmentation | Aug B, `rotation_p=1.0`, triangles 60-300, size 13 | same, except **`rotation_degrees=(-180.0, 180.0)`** (was `(-90.0, 90.0)`) |
+| Mask | circular, `square_size=7` (radius 3) | same |
+| Warm-start | config 9a's own checkpoint | **config 11's own epoch-38 checkpoint** |
+| `num_epochs` / `early_stop_patience` | 100 / 60 | same |
+| Checkpoint monitor | `val_mean_error_px` | same |
+| `save_top_k` | 5 | same |
+
 ## Baseline redo: `unet_final_k5_v2.py` (not part of this series' numbering)
 
 Lives at `wings/modeling/training/unet_final_k5_v2.py` /
