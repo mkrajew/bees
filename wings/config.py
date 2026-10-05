@@ -49,8 +49,6 @@ INTERIM_DATA_DIR = DATA_PATH / "interim"
 PROCESSED_DATA_DIR = DATA_PATH / "processed"
 EXTERNAL_DATA_DIR = DATA_PATH / "external"
 
-APP_DIR = PROJ_ROOT / "wings" / "app"
-
 MODELS_DIR = PROJ_ROOT / "models"
 MODELLING_DIR = PROJ_ROOT / "wings" / "modeling"
 TRAINING_DIR = MODELLING_DIR / "training"

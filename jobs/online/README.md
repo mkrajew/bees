@@ -392,8 +392,9 @@ of its NN baseline, and the aggregate GPA mean dropped from 9.28px to
 8.61px -- with `FULL_ROTATION_MULTISTART_ANGLES` combined with
 `pca_prealign` giving identical results to `pca_prealign` alone in this
 test, at essentially the same wall time as before. Wired into
-`wings/app/images.py`'s production inference call alongside the existing
-`multistart_angles=FULL_ROTATION_MULTISTART_ANGLES`. Not needed in
+the production inference call of the Gradio prototype (`wings/app/images.py`, since
+removed; the web application in the separate `wingai-app` repository uses the same
+call) alongside the existing `multistart_angles=FULL_ROTATION_MULTISTART_ANGLES`. Not needed in
 `litnet.py`'s training-time validation for the same reason the original
 multistart fix wasn't: real val/test images are never rotated.
 
