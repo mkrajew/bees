@@ -94,7 +94,7 @@ uv sync --dev
 
 ## Performance
 
-The computational performance of WingAI was evaluated using end-to-end benchmarks measuring the time required to process a single bee wing image, from input loading to the generation of ordered landmark coordinates. Benchmarks were executed using `pytest-benchmark` on standard laptop hardware (the benchmark script lived in `wings/app/test_benchmark.py` and was removed together with the Gradio prototype; see the git history).
+The computational performance of WingAI was evaluated using end-to-end benchmarks measuring the time required to process a single bee wing image, from input loading to the generation of ordered landmark coordinates. Benchmarks were executed using `pytest-benchmark` on standard laptop hardware. The table below was measured with the original benchmark script (`wings/app/test_benchmark.py`, removed together with the Gradio prototype; see the git history) on an earlier, smaller model. Current checkpoints are benchmarked with `wings/benchmarks/test_inference.py` (`uv run pytest --benchmark-min-rounds=1000`; see its docstring for the options).
 
 **Test platform:**
 - CPU: 12th Gen Intel® Core™ i7-12800H (2.40 GHz)

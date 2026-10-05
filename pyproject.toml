@@ -47,6 +47,11 @@ include = ["wings"]
 [tool.uv]
 package = true
 
+# The only tests in this repo are the inference benchmarks (wings/benchmarks/).
+[tool.pytest.ini_options]
+testpaths = ["wings/benchmarks"]
+addopts = "--benchmark-columns=min,max,mean,stddev,median,rounds --benchmark-time-unit=ms"
+
 [dependency-groups]
 dev = [
     "ipykernel>=7.1.0",
