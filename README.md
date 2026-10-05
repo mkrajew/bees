@@ -61,7 +61,7 @@ This dataset contains annotated bee wing images collected across Europe and serv
 
 ## Running the Application
 
-The web application is developed and deployed from a separate repository, [wingai-app](https://github.com/mkrajew/wingai-app) (React frontend, FastAPI backend, Docker Compose). It runs on the trained checkpoint and the precomputed mean wing shape produced by this repository – see [Model Training](#model-training) below. The earlier Gradio prototype that used to live in `wings/app` has been removed.
+The web application is developed and deployed from a separate repository, [wingai-app](https://github.com/mkrajew/wingai-app) (React frontend, FastAPI backend, Docker Compose). It runs on the trained checkpoint and the precomputed mean wing shape produced by this repository – see [Model Training](#model-training) below.
 
 ---
 
@@ -94,21 +94,26 @@ uv sync --dev
 
 ## Performance
 
-The computational performance of WingAI was evaluated using end-to-end benchmarks measuring the time required to process a single bee wing image, from input loading to the generation of ordered landmark coordinates. Benchmarks were executed using `pytest-benchmark` on standard laptop hardware. The table below was measured with the original benchmark script (`wings/app/test_benchmark.py`, removed together with the Gradio prototype; see the git history) on an earlier, smaller model. Current checkpoints are benchmarked with `wings/benchmarks/test_inference.py` (`uv run pytest --benchmark-min-rounds=1000`; see its docstring for the options).
+The computational performance of WingAI was evaluated using end-to-end benchmarks measuring the time required to process a single bee wing image, from loading the (already cropped) image file to the generation of ordered landmark coordinates: preprocessing, U-Net inference, landmark extraction and GPA ordering with the production settings (reflection handling, 8 start angles, PCA pre-alignment). Benchmarks were executed using `pytest-benchmark` (`wings/benchmarks/test_inference.py`) on standard laptop hardware. Each case runs 1000 rounds after warm-up, every round processing the next image of a fixed random sample of 100 wing images from the countries used for training (AT, GR, HR, HU, MD, PL, RO, SI).
 
 **Test platform:**
 - CPU: 12th Gen Intel® Core™ i7-12800H (2.40 GHz)
 - RAM: 32 GB
 - GPU: NVIDIA RTX A3000 Laptop GPU (12 GB)
+- Software: Python 3.12, PyTorch 2.11 (CUDA 12.8)
 
-The results are summarized below:
+The results are summarized below (`final-precise` was trained without augmentation, `final-rotation-2` with rotation augmentation over the full ±180° range; both share the same architecture):
 
-| Mode | Min (ms) | Max (ms) | Mean (ms) | StdDev (ms) | Median (ms) | Rounds |
-|-----|----------|----------|-----------|-------------|-------------|--------|
-| GPU | 38.50 | 142.13 | 58.54 | 10.39 | 58.36 | 1000 |
-| CPU | 94.59 | 159.58 | 115.11 | 12.39 | 110.46 | 1000 |
+| Model | Mode | Min (ms) | Max (ms) | Mean (ms) | StdDev (ms) | Median (ms) | Rounds |
+|---|---|---|---|---|---|---|---|
+| final-precise | GPU | 27.28 | 71.86 | 36.42 | 4.87 | 36.48 | 1000 |
+| final-precise | CPU | 383.13 | 585.39 | 460.28 | 24.69 | 465.96 | 1000 |
+| final-rotation-2 | GPU | 30.99 | 116.78 | 38.88 | 9.32 | 35.83 | 1000 |
+| final-rotation-2 | CPU | 441.61 | 620.01 | 468.85 | 16.78 | 466.01 | 1000 |
 
-With GPU acceleration enabled, WingAI processes a single image in approximately **60 ms**, while CPU-only execution remains well below **120 ms** per image. These results confirm that the software is suitable for high-throughput batch processing on standard desktop or laptop hardware.
+With GPU acceleration enabled, WingAI processes a single image in under **40 ms** on average (about 26 images per second), while CPU-only execution takes approximately **465 ms** per image (about 2 images per second). On the CPU about 94% of the time is the U-Net forward pass (≈435 ms); on the GPU the forward pass takes ≈17–18 ms, the GPA landmark ordering ≈12–14 ms and image loading with preprocessing ≈6 ms. These results show that batch processing is practical on standard laptop hardware, with a GPU recommended for large collections.
+
+To reproduce the measurements: `uv run pytest --benchmark-min-rounds=1000 -k full` (see the docstring of `wings/benchmarks/test_inference.py` for the options).
 
 ---
 

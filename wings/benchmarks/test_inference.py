@@ -6,7 +6,11 @@ the Gradio prototype). Differences from that one are deliberate:
 
 - it cycles over a random sample of real (YOLO-cropped) images instead of
   repeating one random image: the GPA step gets much slower when the model
-  detects extra or missing points, so a single image can be unrepresentative;
+  detects extra or missing points, so a single image can be unrepresentative.
+  Like the old benchmark, the sample is drawn from the countries the models
+  were trained on (wings.config.COUNTRIES): the cropped dataset also holds
+  other countries, whose images more often give a wrong number of points and
+  then dominate the Max / StdDev columns with slow orderings;
 - it times the model pipeline only (decode -> preprocess -> UNet -> mask ->
   coordinates -> GPA ordering); the old one also re-read the image and built
   the Gradio UI's per-landmark overlay masks;
@@ -36,7 +40,7 @@ from functools import partial
 import pytest
 import torch
 
-from wings.config import MODELS_DIR, PROCESSED_DATA_DIR
+from wings.config import COUNTRIES, MODELS_DIR, PROCESSED_DATA_DIR
 from wings.gpa import FULL_ROTATION_MULTISTART_ANGLES, handle_coordinates
 from wings.modeling.litnet import LitNet
 from wings.modeling.loss import BCEDiceLoss
@@ -48,7 +52,7 @@ CHECKPOINTS = [
     MODELS_DIR / "final" / "final-precise.ckpt",
     MODELS_DIR / "final" / "final-rotation-2.ckpt",
 ]
-N_IMAGES = 100  # size of the random sample of real wings that is cycled over
+N_IMAGES = 100  # size of the random sample of real wings (from COUNTRIES) that is cycled over
 WARMUP_CALLS = 5  # CUDA init, cuDNN autotune and lazy imports, before pytest-benchmark's own calibration
 
 GPA_SETTINGS = {
@@ -61,7 +65,11 @@ STAGES = ("decode + preprocess", "model", "mask -> coords", "GPA ordering")
 @pytest.fixture(scope="module")
 def files():
     folder = PROCESSED_DATA_DIR / "cropped"
-    all_files = sorted(p for p in folder.rglob("*") if p.suffix.lower() in {".png", ".jpg", ".jpeg"})
+    all_files = sorted(
+        p
+        for p in folder.rglob("*")
+        if p.suffix.lower() in {".png", ".jpg", ".jpeg"} and p.name.split("-", 1)[0] in COUNTRIES
+    )
     return random.Random(0).sample(all_files, N_IMAGES)
 
 
