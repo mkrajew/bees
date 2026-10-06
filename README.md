@@ -26,7 +26,7 @@ The system combines a YOLO-based wing detector with a deep convolutional neural 
 
 WingAI is designed to support high-throughput morphometric analyses, reduce manual annotation effort, and integrate seamlessly with existing classification workflows such as IdentiFly.
 
-In addition to the application itself, this repository contains the **full pipeline for dataset preprocessing, model training, and evaluation**, including all code used to prepare training data, train the neural network models, and reproduce the experimental results.
+The web application lives in a separate repository, [wingai-app](https://github.com/mkrajew/wingai-app). This repository contains the **full pipeline for dataset preprocessing, model training, and evaluation**, including all code used to prepare training data, train the neural network models, and reproduce the experimental results.
 
 ![Sample landmarks on image](./sample_landmarks_on_image.png)
 
@@ -38,7 +38,7 @@ In addition to the application itself, this repository contains the **full pipel
 - Fully automated detection of 19 homologous morphometric landmarks
 - Robust landmark ordering using Generalized Procrustes Analysis (GPA)
 - Batch processing of large image collections
-- Interactive web-based user interface (Gradio)
+- Interactive web-based user interface (React + FastAPI, in the separate [wingai-app](https://github.com/mkrajew/wingai-app) repository)
 - Manual landmark editing and quality-control flags
 - Automatic identification of potentially problematic images
 - Export of landmark coordinates in:
@@ -61,91 +61,59 @@ This dataset contains annotated bee wing images collected across Europe and serv
 
 ## Running the Application
 
-> **Note:**  
-> This section assumes that a **trained model** and a **precomputed mean wing shape** are already available in the project.  
-> If you have not trained the model yet or computed the mean shape, please refer to the  
-> **[Model Training](#model-training)** section at the bottom of this README for detailed instructions.
+The web application is developed and deployed from a separate repository, [wingai-app](https://github.com/mkrajew/wingai-app) (React frontend, FastAPI backend, Docker Compose). It runs on the trained checkpoint and the precomputed mean wing shape produced by this repository – see [Model Training](#model-training) below.
+
+---
+
+## Installation & Environment Setup
+
+This project uses **uv** for dependency and environment management.
 
 ### Requirements
 
 - Python 3.12
 - CUDA-capable GPU (optional, recommended)
-- Docker (optional, recommended)
 
-### Installation & Environment Setup
+### Sync dependencies
 
-This project uses **uv** for dependency and environment management.
-
-#### Sync dependencies
-
-To install the core runtime dependencies:
+To install the project dependencies:
 
 ```bash
 uv sync
-````
+```
 
-#### Development dependencies (optional)
+### Development dependencies (optional)
 
-If you plan to work with notebooks, benchmarks, or development tools, install the development dependencies as well:
+If you plan to work with notebooks or development tools, install the development dependencies as well:
+
 ```bash
 uv sync --dev
 ```
-
-
----
-
-### Run the App (local)
-
-This project includes a `Makefile` that provides a simple command to start the application:
-
-```bash
-make app
-```
-
----
-
-## Build & Run with Docker
-
-WingAI can be run using Docker to ensure a consistent and reproducible environment.
-
-### Run without GPU (CPU-only)
-
-```bash
-docker compose up --build
-```
-
-### Run with GPU support
-
-To run WingAI with GPU acceleration, start the container with access to all available GPUs:
-
-```bash
-docker compose up --build --gpus all
-```
-
-When a compatible NVIDIA GPU is exposed to the container, WingAI will automatically use it for accelerated inference. Otherwise, the application will fall back to CPU execution.
-
-> **Note:** GPU support requires the NVIDIA Container Toolkit to be installed on the host system.  
-> Installation instructions are available [here](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html).
 
 ---
 
 ## Performance
 
-The computational performance of WingAI was evaluated using end-to-end benchmarks measuring the time required to process a single bee wing image, from input loading to the generation of ordered landmark coordinates. Benchmarks were executed using `pytest-benchmark` on standard laptop hardware.
+The computational performance of WingAI was evaluated using end-to-end benchmarks measuring the time required to process a single bee wing image, from loading the (already cropped) image file to the generation of ordered landmark coordinates: preprocessing, U-Net inference, landmark extraction and GPA ordering with the production settings (reflection handling, 8 start angles, PCA pre-alignment). Benchmarks were executed using `pytest-benchmark` (`wings/benchmarks/test_inference.py`) on standard laptop hardware. Each case runs 1000 rounds after warm-up, every round processing the next image of a fixed random sample of 100 wing images from the countries used for training (AT, GR, HR, HU, MD, PL, RO, SI).
 
 **Test platform:**
 - CPU: 12th Gen Intel® Core™ i7-12800H (2.40 GHz)
 - RAM: 32 GB
 - GPU: NVIDIA RTX A3000 Laptop GPU (12 GB)
+- Software: Python 3.12, PyTorch 2.11 (CUDA 12.8)
 
-The results are summarized below:
+The results are summarized below (`final-precise` was trained without augmentation, `final-rotation-2` with rotation augmentation over the full ±180° range; both share the same architecture):
 
-| Mode | Min (ms) | Max (ms) | Mean (ms) | StdDev (ms) | Median (ms) | Rounds |
-|-----|----------|----------|-----------|-------------|-------------|--------|
-| GPU | 38.50 | 142.13 | 58.54 | 10.39 | 58.36 | 1000 |
-| CPU | 94.59 | 159.58 | 115.11 | 12.39 | 110.46 | 1000 |
+| Model | Mode | Min (ms) | Max (ms) | Mean (ms) | StdDev (ms) | Median (ms) | Rounds |
+|---|---|---|---|---|---|---|---|
+| final-precise | GPU | 27.28 | 71.86 | 36.42 | 4.87 | 36.48 | 1000 |
+| final-precise | CPU | 383.13 | 585.39 | 460.28 | 24.69 | 465.96 | 1000 |
+| final-rotation-2 | GPU | 30.99 | 116.78 | 38.88 | 9.32 | 35.83 | 1000 |
+| final-rotation-2 | CPU | 441.61 | 620.01 | 468.85 | 16.78 | 466.01 | 1000 |
 
-With GPU acceleration enabled, WingAI processes a single image in approximately **60 ms**, while CPU-only execution remains well below **120 ms** per image. These results confirm that the software is suitable for high-throughput batch processing on standard desktop or laptop hardware.
+With GPU acceleration enabled, WingAI processes a single image in under **40 ms** on average (about 26 images per second), while CPU-only execution takes approximately **465 ms** per image (about 2 images per second). On the CPU about 94% of the time is the U-Net forward pass (≈435 ms); on the GPU the forward pass takes ≈17–18 ms, the GPA landmark ordering ≈12–14 ms and image loading with preprocessing ≈6 ms. These results show that batch processing is practical on standard laptop hardware, with a GPU recommended for large collections.
+
+To reproduce the measurements: `uv run pytest --benchmark-min-rounds=1000 -k full` (see the docstring of `wings/benchmarks/test_inference.py` for the options).
 
 ---
 
@@ -163,7 +131,6 @@ With GPU acceleration enabled, WingAI processes a single image in approximately 
 ├── references          # Reference materials
 ├── reports             # Figures and analysis outputs
 └── wings               # Core WingAI source code
-    ├── app             # Gradio-based user interface
     ├── modeling        # Model definitions and training code
     ├── dataset         # Dataset handling and GPA logic
     ├── gpa.py          # GPA logic
@@ -218,8 +185,8 @@ After setting the desired parameters, start the training by running:
 
 During training, the pipeline automatically monitors validation performance and saves the best-performing model checkpoints to the `models/` directory.
 
-After training is complete, select the appropriate checkpoint file together with the computed mean wing shape and provide them to the application in the designated configuration locations.
-These files are required for running inference and for correct landmark ordering during application execution.
+After training is complete, select the appropriate checkpoint file and provide it, together with the computed mean wing shape, to the web application ([wingai-app](https://github.com/mkrajew/wingai-app), `backend/models/`).
+These files are required for running inference and for correct landmark ordering.
 
 ---
 
