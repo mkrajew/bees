@@ -1,4 +1,6 @@
 import copy
+import os
+import subprocess
 
 import numpy as np
 import pandas as pd
@@ -121,3 +123,21 @@ def test_a_one_image_split_can_still_make_compositions(label_files, tmp_path):
     (small / "train.txt").write_text(str((label_files.raw / only.iloc[0]["file"]).resolve()) + "\n")
     dataset = WingOBBDataset(small / "labels.csv", "train", small / "train.txt", raw_dir=label_files.raw, cfg=AugConfig(p_multi=1.0))
     assert len(dataset) == 1 and len(dataset.label_for(0, 3)["instances"].segments) >= 2
+
+
+def link_directory(link, target):
+    """`link` -> `target` as a symbolic link, or as a junction on Windows without the right to create symbolic links."""
+    try:
+        os.symlink(target, link, target_is_directory=True)
+    except OSError:
+        if os.name != "nt" or subprocess.run(["cmd", "/c", "mklink", "/J", str(link), str(target)], capture_output=True).returncode != 0:
+            pytest.skip("cannot create a directory link here")
+
+
+def test_a_linked_raw_folder_still_matches_the_image_list(label_files, tmp_path):
+    """On shared clusters `data/` is often a link. The image lists hold resolved paths (`write_image_lists`), so the
+    dataset must compare resolved paths too, instead of failing with 'missing from the labels table'."""
+    link = tmp_path / "linked-raw"
+    link_directory(link, label_files.raw)
+    dataset = WingOBBDataset(label_files.out / "labels.csv", "train", label_files.out / "train.txt", raw_dir=link, cfg=AugConfig(p_multi=0.0))
+    assert len(dataset) == 6 and dataset.label_for(0, 1)["img"].shape == (640, 640, 3)

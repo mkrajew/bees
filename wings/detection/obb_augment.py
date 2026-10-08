@@ -15,6 +15,7 @@ import math
 import os
 from collections.abc import Sequence
 from dataclasses import dataclass
+from functools import lru_cache
 from pathlib import Path
 
 import cv2
@@ -258,6 +259,19 @@ def make_multi_sample(items: Sequence[Item], rng: np.random.Generator, cfg: AugC
     return Sample(canvas, np.stack(all_corners).astype(np.float32))
 
 
+@lru_cache(maxsize=None)
+def _resolved_folder(folder: str) -> str:
+    return os.path.realpath(folder)
+
+
+def _canonical_path(path: str | os.PathLike) -> str:
+    """Comparable form of an image path: normalised, links in its folder resolved, case folded on Windows. The image
+    lists hold resolved paths (`write_image_lists`) while the raw folder may be given as a link, as `data/` often is
+    on clusters. Only the folder is resolved (and cached), so 20,000 images cost a handful of lookups."""
+    folder, name = os.path.split(os.path.normpath(str(path)))
+    return os.path.normcase(os.path.join(_resolved_folder(folder), name))
+
+
 class WingOBBDataset(YOLODataset):
     """Training dataset: raw wing images + OBB corners from `labels.csv`, augmented online.
 
@@ -282,7 +296,7 @@ class WingOBBDataset(YOLODataset):
         self.cfg = cfg
         table = pd.read_csv(labels_csv)
         self.table = table[table["split"] == split].reset_index(drop=True)
-        self._row_of = {os.path.normcase(os.path.normpath(str(self.raw_dir / f))): i for i, f in enumerate(self.table["file"])}
+        self._row_of = {_canonical_path(self.raw_dir / f): i for i, f in enumerate(self.table["file"])}
         super().__init__(
             img_path=str(image_list),
             imgsz=cfg.imgsz,
@@ -300,7 +314,7 @@ class WingOBBDataset(YOLODataset):
         """Placeholder labels (the real ones are built per sample); keeps `im_files` and `labels` aligned."""
         labels, self._rows = [], []
         for im_file in self.im_files:
-            key = os.path.normcase(os.path.normpath(im_file))
+            key = _canonical_path(im_file)
             if key not in self._row_of:
                 raise ValueError(f"{im_file} is listed in the image list but missing from the labels table")
             row = self.table.iloc[self._row_of[key]]
