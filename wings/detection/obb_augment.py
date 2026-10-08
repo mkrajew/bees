@@ -26,6 +26,7 @@ from ultralytics.data.dataset import YOLODataset
 from ultralytics.utils import DEFAULT_CFG
 from ultralytics.utils.instance import Instances
 
+from wings.detection.dataset import fill_white_spots, is_near_white
 from wings.detection.obb_labels import CORNER_COLUMNS
 
 
@@ -78,14 +79,20 @@ class Sample:
 
 def load_item(path: str | Path, row) -> Item:
     """Read the raw image at `path` and combine it with the label-table row `row` (a pandas Series).
-    Fails loudly if the file is unreadable or its size differs from the one in the table."""
+    Fails loudly if the file is unreadable or its size differs from the one in the table.
+    As in `pad_image`, pure-white spots (the wedges the scan rotation left in the corners of most raw scans) are
+    painted over with the background colour unless that colour is itself near white: rotated with the wing they
+    would be a sharp cue for its axis that real photos do not have."""
     image = cv2.imread(str(path), cv2.IMREAD_COLOR)
     if image is None:
         raise FileNotFoundError(f"cannot read {path}")
     if image.shape[:2] != (int(row["img_h"]), int(row["img_w"])):
         raise ValueError(f"{path} has shape {image.shape[:2]}, the labels table says {(int(row['img_h']), int(row['img_w']))}")
     corners = row[CORNER_COLUMNS].to_numpy(np.float64).reshape(4, 2)
-    return Item(image, corners, (int(row["bg_b"]), int(row["bg_g"]), int(row["bg_r"])))
+    background = (int(row["bg_b"]), int(row["bg_g"]), int(row["bg_r"]))
+    if not is_near_white(background):
+        image = fill_white_spots(image, background)
+    return Item(image, corners, background)
 
 
 def apply_affine(matrix: np.ndarray, points: np.ndarray) -> np.ndarray:

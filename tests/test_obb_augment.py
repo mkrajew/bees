@@ -11,6 +11,7 @@ from wings.detection.obb_augment import (
     apply_photometric,
     choose_k,
     grid_cells,
+    load_item,
     make_multi_sample,
     make_single_sample,
     plan_placement,
@@ -214,3 +215,35 @@ def test_five_thousand_compositions_never_overlap_or_leave_the_canvas():
             for j in range(i + 1, k):
                 a, b = boxes[i], boxes[j]
                 assert a[2] <= b[0] or b[2] <= a[0] or a[3] <= b[1] or b[3] <= a[1]
+
+
+def scan_with_white_wedges(label_files):
+    """The first synthetic image with pure-white wedges in two corners (as in the real scans), rewritten on disk.
+    Returns its path, its label-table row, the image without the wedges and the wedge mask."""
+    row = label_files.table.iloc[0].copy()
+    path = label_files.raw / row["file"]
+    clean = cv2.imread(str(path))
+    h, w = clean.shape[:2]
+    mask = np.zeros((h, w), np.uint8)
+    cv2.fillPoly(mask, [np.array([[0, 0], [90, 0], [0, 60]]), np.array([[w - 1, h - 1], [w - 80, h - 1], [w - 1, h - 50]])], 255)
+    painted = clean.copy()
+    painted[mask > 0] = 255
+    cv2.imwrite(str(path), painted)
+    return path, row, clean, mask > 0
+
+
+def test_white_spots_of_a_scan_are_filled_with_the_background_colour(label_files):
+    """Raw scans carry pure-white wedges at their corners (left over from the scan rotation). Like `pad_image`, `load_item`
+    fills them, otherwise every rotated sample shows a sharp white triangle fixed to the wing axis."""
+    path, row, clean, wedges = scan_with_white_wedges(label_files)
+    item = load_item(path, row)
+    assert wedges.sum() > 500 and (item.image[wedges] == item.background).all()
+    assert (item.image[~wedges] == clean[~wedges]).all()  # nothing else is touched
+
+
+def test_a_near_white_background_keeps_its_pixels(label_files):
+    """`pad_image` does not fill when the whole background is near white (bright scans): neither does `load_item`."""
+    path, row, clean, wedges = scan_with_white_wedges(label_files)
+    row[["bg_b", "bg_g", "bg_r"]] = 250
+    item = load_item(path, row)
+    assert (item.image[wedges] == 255).all()
