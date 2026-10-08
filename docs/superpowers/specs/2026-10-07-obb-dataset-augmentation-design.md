@@ -1,6 +1,6 @@
 # OBB wing detector, stage 1: labels, dataset and online augmentation
 
-Date: 2026-10-07 (sections 4, 6, 8 and 9 amended on 2026-10-08 while writing the implementation plan, after reading the Ultralytics dataset code in more detail; sections 4 and 5.1 amended again on 2026-10-08 after the review of the implementation) · Branch: `yolo-improvements` · Status: approved
+Date: 2026-10-07 (sections 4, 6, 8 and 9 amended on 2026-10-08 while writing the implementation plan, after reading the Ultralytics dataset code in more detail; sections 4 and 5.1 amended again on 2026-10-08 after the review of the implementation; section 3 amended on 2026-10-08 with the extra room on the lower side of the box) · Branch: `yolo-improvements` · Status: approved
 
 ## 1. Background and goal
 
@@ -26,8 +26,9 @@ Input: the 19 landmarks `P` (19×2) of one image in top-left pixel coordinates (
 
 1. `c = mean(P)`. `a` is the unit eigenvector of the covariance matrix with the largest eigenvalue. Sign convention: `a_x ≥ 0` (if `a_x = 0` then `a_y > 0`). `n = (−a_y, a_x)`.
 2. Project: `u = (P − c)·a`, `v = (P − c)·n`. The box centre is `m = c + (u_min + u_max)/2 · a + (v_min + v_max)/2 · n`, the same midpoint-of-extremes rule as the current axis-aligned label.
-3. Sides: `length = (u_max − u_min) · 1.2` along `a` and `width = (v_max − v_min) · 1.4` across. These are the factors the current labels use (`process_bbox`: x 1.2, y 1.4), so the crop stays comparable with the old detector.
-4. Corners, clockwise in the (`a`, `n`) frame: `m + (−length/2)a + (−width/2)n`, `m + (+length/2)a + (−width/2)n`, `m + (+length/2)a + (+width/2)n`, `m + (−length/2)a + (+width/2)n`. Axis angle `theta = atan2(a_y, a_x)` in degrees, in (−90°, 90°].
+3. Sides: `length = (u_max − u_min) · 1.2` along `a` and `width = (v_max − v_min) · 1.4` across. These are the factors the current labels use (`process_bbox`: x 1.2, y 1.4), so the crop stays comparable with the old detector, except for the extra room below (step 3a).
+3a. Extra room below (added on 2026-10-08 at the author's request, after notebook 31 showed the lobe of the wing sticking out under the box): the `+n` edge moves outwards by `BOTTOM_EXTRA = 10%` of the width from step 3 and the other three edges stay, i.e. `width ← 1.1 · width` and `m ← m + 0.05 · width_old · n`. Because `a_x ≥ 0`, `n` points down for the raw wings (they lie roughly flat), so this is the lower side of the picture. In a rotated training sample the extra room rotates with the wing, so the label stays a plain rectangle; the box is no longer centred on the landmarks.
+4. Corners (with `m` and `width` as after step 3a), clockwise in the (`a`, `n`) frame: `m + (−length/2)a + (−width/2)n`, `m + (+length/2)a + (−width/2)n`, `m + (+length/2)a + (+width/2)n`, `m + (−length/2)a + (+width/2)n`. Axis angle `theta = atan2(a_y, a_x)` in degrees, in (−90°, 90°].
 5. `eig_ratio` = largest / smallest eigenvalue. It is stored and reported; a ratio below 1.5 marks an ill-defined axis. No image is dropped in stage 1.
 6. `dir_sign` (±1): let `i_lo` and `i_hi` be the landmarks with the smallest and largest projection of the **mean shape** (`data/processed/mask_datasets/rectangle/mean_shape.pth`, same landmark order as the CSVs) on its own principal axis (same sign convention); the pair is computed once. Then `dir_sign = sign((P[i_hi] − P[i_lo]) · a)`. It is a consistent direction label, not used in training.
 

@@ -28,11 +28,31 @@ def test_points_inside_box_notices_a_point_outside(landmarks):
 
 
 def test_margins_scale_the_extents(landmarks):
-    tight = obb_from_landmarks(landmarks, 1.0, 1.0)
-    obb = obb_from_landmarks(landmarks, 1.2, 1.4)
+    tight = obb_from_landmarks(landmarks, 1.0, 1.0, bottom_extra=0.0)
+    obb = obb_from_landmarks(landmarks, 1.2, 1.4, bottom_extra=0.0)
     assert obb.length == pytest.approx(tight.length * 1.2)
     assert obb.width == pytest.approx(tight.width * 1.4)
     assert (obb.cx, obb.cy) == pytest.approx((tight.cx, tight.cy))
+
+
+def test_the_lower_side_grows_by_a_tenth_of_the_width_and_the_other_sides_stay(landmarks):
+    plain = obb_from_landmarks(landmarks, bottom_extra=0.0)
+    obb = obb_from_landmarks(landmarks)  # the default: 10% more room on the lower side
+    assert obb.length == pytest.approx(plain.length) and obb.theta_deg == pytest.approx(plain.theta_deg)
+    assert obb.width == pytest.approx(plain.width * 1.1)
+    before, after = plain.corners(), obb.corners()  # order: (-L/2,-W/2), (+L/2,-W/2), (+L/2,+W/2), (-L/2,+W/2)
+    assert after[0] == pytest.approx(before[0]) and after[1] == pytest.approx(before[1])  # the upper side did not move
+    shift = 0.1 * plain.width * plain.normal
+    assert after[2] - before[2] == pytest.approx(shift) and after[3] - before[3] == pytest.approx(shift)
+
+
+@pytest.mark.parametrize("angle", [-30.0, -5.0, 0.0, 7.0, 45.0])
+def test_the_extra_room_is_below_the_wing_in_the_image(rng, angle):
+    """Raw wings lie roughly flat (axis within about +-45 degrees), so the extra room must end up at the bottom of the picture."""
+    wing = make_landmarks(rng, angle_deg=angle)
+    plain, grown = obb_from_landmarks(wing, bottom_extra=0.0).corners(), obb_from_landmarks(wing).corners()
+    assert grown[:, 1].max() > plain[:, 1].max() + 1.0  # the lowest corner moved down (y grows downwards)
+    assert grown[:, 1].min() == pytest.approx(plain[:, 1].min())  # the highest one did not move
 
 
 @pytest.mark.parametrize("alpha", [-120.0, -35.0, 12.0, 80.0, 171.0])

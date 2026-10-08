@@ -2,8 +2,9 @@
 
 Coordinates are image pixels with the origin in the top-left corner (x to the right, y down).
 The box is described by its centre, its side along the wing axis (`length`), its side across
-(`width`) and the axis angle. The margins match the axis-aligned labels of the old detector
-(`wings.detection.dataset.process_bbox`: x 1.2, y 1.4).
+(`width`) and the axis angle. The margins start from those of the axis-aligned labels of the old
+detector (`wings.detection.dataset.process_bbox`: x 1.2, y 1.4); on top of that the box gets more
+room on its lower side only (`BOTTOM_EXTRA`), because the lobe of the wing sticks out there.
 """
 
 from __future__ import annotations
@@ -14,6 +15,7 @@ import numpy as np
 
 LENGTH_FACTOR = 1.2  # margin along the wing axis
 WIDTH_FACTOR = 1.4  # margin across the wing axis
+BOTTOM_EXTRA = 0.10  # more room on the +normal (lower) side only, as a fraction of the width after WIDTH_FACTOR
 MIN_EIG_RATIO = 1.5  # below this the principal axis is ill-defined (reported, never enforced)
 CORNER_COLUMNS = [f"{axis}{i}" for i in range(1, 5) for axis in ("x", "y")]  # label-table columns x1, y1, ..., x4, y4
 
@@ -65,9 +67,13 @@ def principal_axis(points: np.ndarray) -> tuple[np.ndarray, float]:
     return axis, float(eigvals[-1] / max(eigvals[0], 1e-12))
 
 
-def obb_from_landmarks(points: np.ndarray, length_factor: float = LENGTH_FACTOR, width_factor: float = WIDTH_FACTOR) -> Obb:
+def obb_from_landmarks(
+    points: np.ndarray, length_factor: float = LENGTH_FACTOR, width_factor: float = WIDTH_FACTOR, bottom_extra: float = BOTTOM_EXTRA
+) -> Obb:
     """PCA recipe: axis = direction of the largest spread; the box spans the extreme projections
-    of the points on the axis and on its normal, enlarged by the margin factors about the midpoint."""
+    of the points on the axis and on its normal, enlarged by the margin factors about the midpoint.
+    Then the +normal side moves outwards by `bottom_extra` times the width and the other sides stay: the axis points
+    to the right (x >= 0), so for an upright wing the normal points down and this is the lower side of the picture."""
     pts = np.asarray(points, dtype=np.float64)
     axis, ratio = principal_axis(pts)
     normal = np.array([-axis[1], axis[0]])
@@ -79,6 +85,9 @@ def obb_from_landmarks(points: np.ndarray, length_factor: float = LENGTH_FACTOR,
     width = (v.max() - v.min()) * width_factor
     if width <= 1e-6 * length:
         raise ValueError("landmarks are collinear: the box has no width")
+    growth = bottom_extra * width
+    centre = centre + (growth / 2.0) * normal  # the +normal edge moves by `growth`, the other one stays
+    width = width + growth
     theta = float(np.degrees(np.arctan2(axis[1], axis[0])))
     return Obb(float(centre[0]), float(centre[1]), float(length), float(width), theta, ratio)
 

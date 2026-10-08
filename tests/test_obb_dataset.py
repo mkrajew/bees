@@ -11,7 +11,7 @@ from ultralytics.data.dataset import YOLODataset
 from ultralytics.utils import DEFAULT_CFG, ops
 
 from wings.detection.obb_dataset import app, build_labels, freeze_split, read_split_map, write_dataset_yaml, write_image_lists
-from wings.detection.obb_labels import CORNER_COLUMNS, points_inside_box
+from wings.detection.obb_labels import CORNER_COLUMNS, obb_from_landmarks, points_inside_box
 
 
 def build(raw):
@@ -31,6 +31,13 @@ def test_every_landmark_lies_inside_its_box(synthetic_raw):
     for _, row in table.iterrows():
         corners = row[CORNER_COLUMNS].to_numpy(np.float64).reshape(4, 2)
         assert points_inside_box(corners, synthetic_raw.landmarks[row["file"].split("/")[-1]], tol=1e-6)
+
+
+def test_the_table_boxes_have_the_extra_room_on_the_lower_side(synthetic_raw):
+    table = build(synthetic_raw)
+    for _, row in table.iterrows():
+        plain = obb_from_landmarks(synthetic_raw.landmarks[row["file"].split("/")[-1]], bottom_extra=0.0)
+        assert row["length"] == pytest.approx(plain.length) and row["width"] == pytest.approx(plain.width * 1.1)
 
 
 def test_size_and_background_columns_match_the_images(synthetic_raw):
