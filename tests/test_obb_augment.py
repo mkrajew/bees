@@ -15,6 +15,7 @@ from wings.detection.obb_augment import (
     choose_k,
     composition_picks,
     grid_cells,
+    heal_edges,
     load_item,
     make_multi_sample,
     make_single_sample,
@@ -295,3 +296,64 @@ def test_composition_picks_start_with_the_first_wing_and_follow_the_k_weights():
     assert all(composition_picks(pool, np.random.default_rng(s), AugConfig(), first=7)[0] == 7 for s in range(20))
     assert len({composition_picks(pool, np.random.default_rng(s), AugConfig())[0] for s in range(200)}) > 30  # without `first` it is drawn uniformly
     assert composition_picks(pool, np.random.default_rng(5), AugConfig()) == composition_picks(pool, np.random.default_rng(5), AugConfig())
+
+
+def healing_setup(photo_tone=200, canvas_tone=190, line=False, size=240):
+    """A flat photo of 60 x 100 px pasted with its top-left corner at (x 60, y 40) on a flat canvas; `line`: a dark vein crosses the top border."""
+    image = np.full((60, 100, 3), photo_tone, np.uint8)
+    if line:
+        image[:, 50:53] = 30
+    matrix = np.array([[1.0, 0.0, 60.0], [0.0, 1.0, 40.0]])
+    coverage = warp_mask(image.shape[:2], matrix, size) > 0
+    return np.full((size, size, 3), canvas_tone, np.uint8), image, matrix, coverage, (0, 0, size, size), np.full(3, float(canvas_tone), np.float32)
+
+
+def test_healing_fades_the_canvas_from_the_border_colour_and_leaves_the_photo_alone():
+    canvas, image, matrix, coverage, cell, tone = healing_setup(photo_tone=200, canvas_tone=190)
+    heal_edges(canvas, image, matrix, coverage, cell, tone, AugConfig())
+    assert (canvas[coverage] == 190).all()  # the function never writes inside the photo (the caller pastes it)
+    column = canvas[:40, 100, 0]  # from the top of the canvas down to row 39, the row next to the photo's top border
+    assert column[39] >= 199 and column[27] == 190 and column[0] == 190  # starts at the border colour, back at the canvas tone 12 px further out
+    assert (np.diff(column[27:40]) >= -1e-4).all()  # a smooth, monotone fade
+
+
+def test_healing_never_paints_a_glow_or_a_shadow():
+    canvas, image, matrix, coverage, cell, tone = healing_setup(photo_tone=250, canvas_tone=150)
+    heal_edges(canvas, image, matrix, coverage, cell, tone, AugConfig())
+    assert canvas[39, 100, 0] == pytest.approx(162.0, abs=0.5) and canvas.max() <= 162.0 + 1e-4  # limited to the canvas tone + 12
+    canvas, image, matrix, coverage, cell, tone = healing_setup(photo_tone=60, canvas_tone=150)
+    heal_edges(canvas, image, matrix, coverage, cell, tone, AugConfig())
+    assert canvas[39, 100, 0] == pytest.approx(138.0, abs=0.5) and canvas.min() >= 138.0 - 1e-4  # and the canvas tone - 12
+
+
+def test_healing_ignores_a_vein_that_crosses_the_border():
+    canvas, image, matrix, coverage, cell, tone = healing_setup(photo_tone=200, canvas_tone=190, line=True)
+    heal_edges(canvas, image, matrix, coverage, cell, tone, AugConfig())
+    assert canvas[39, 111, 0] == pytest.approx(canvas[39, 100, 0], abs=0.5)  # the vein is not dragged out of the photo as a streak
+
+
+def test_healing_stays_inside_the_cell_and_can_be_switched_off():
+    canvas, image, matrix, coverage, _, tone = healing_setup()
+    heal_edges(canvas, image, matrix, coverage, (0, 0, 120, 240), tone, AugConfig())  # the cell ends at x = 120
+    assert (canvas[:, 120:] == 190).all() and (canvas[:, :120][~coverage[:, :120]] != 190).any()
+    canvas, image, matrix, coverage, cell, tone = healing_setup()
+    heal_edges(canvas, image, matrix, coverage, cell, tone, AugConfig(edge_heal_px=0))
+    assert (canvas == 190).all()
+
+
+def test_edge_healing_only_changes_background_pixels_of_the_canvas():
+    items = [painted_item(BOX, fill=(30, 30, 30), background=(150, 150, 150)), painted_item(BOX, fill=(30, 30, 30), background=(158, 158, 158))]
+    plain = make_multi_sample(items, np.random.default_rng(3), AugConfig(photometric=False, edge_heal_px=0))
+    healed = make_multi_sample(items, np.random.default_rng(3), AugConfig(photometric=False))
+    assert np.array_equal(plain.corners, healed.corners)  # the geometry is the same
+    changed = (plain.image != healed.image).any(axis=2)
+    assert changed.any()
+    colours, counts = np.unique(plain.image.reshape(-1, 3), axis=0, return_counts=True)
+    assert (plain.image[changed] == colours[counts.argmax()]).all()  # only flat canvas pixels were touched, never a pixel of a photo
+
+
+def test_edge_healing_is_a_no_op_when_all_photos_have_the_canvas_tone():
+    items = [painted_item(BOX, fill=(30, 30, 30)) for _ in range(3)]  # all share BACKGROUND
+    a = make_multi_sample(items, np.random.default_rng(4), AugConfig(photometric=False, edge_heal_px=0))
+    b = make_multi_sample(items, np.random.default_rng(4), AugConfig(photometric=False))
+    assert np.array_equal(a.image, b.image)

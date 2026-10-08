@@ -53,6 +53,8 @@ class AugConfig:
     p_multi: float = 0.4  # probability of a multi-wing composition
     multi_k_weights: tuple[float, float, float] = (0.5, 0.25, 0.25)  # k = 2, 3, 4
     partner_tone_tol: float | None = 6.0  # a composition only combines wings whose background tones differ by at most this many gray levels (None: no limit)
+    edge_heal_px: int = 12  # width of the fade of the canvas around a pasted photo, from the photo's border colour to the canvas tone (0: off)
+    edge_heal_limit: float = 12.0  # the border colour may differ from the canvas tone by at most this many gray levels, so the fade never becomes a glow or a shadow
 
 
 @dataclass(frozen=True)
@@ -282,21 +284,77 @@ def grid_cells(k: int, size: int, rng: np.random.Generator) -> list[tuple[int, i
     return [cells[i] for i in rng.permutation(len(cells))]
 
 
+def _smoothstep(t: np.ndarray) -> np.ndarray:
+    t = np.clip(t, 0.0, 1.0)
+    return t * t * (3.0 - 2.0 * t)
+
+
+def _border_colour_source(image: np.ndarray, depth: int = 4, window: int = 41) -> np.ndarray:
+    """Copy of the photo whose outermost row / column on each side holds the median-smoothed colour of the `depth` px strip along that side.
+    Warped with BORDER_REPLICATE it carries the border colour outwards without dragging out the veins that cross the border."""
+    out = image.copy()
+
+    def smooth(line: np.ndarray) -> np.ndarray:  # (n, 3) uint8, median filtered along the edge
+        size = min(window, len(line) if len(line) % 2 else len(line) - 1)
+        return cv2.medianBlur(np.ascontiguousarray(line[None]), max(size, 3))[0] if size >= 3 else line
+
+    out[0] = smooth(np.median(image[:depth], axis=0).astype(np.uint8))
+    out[-1] = smooth(np.median(image[-depth:], axis=0).astype(np.uint8))
+    out[:, 0] = smooth(np.median(image[:, :depth], axis=1).astype(np.uint8))
+    out[:, -1] = smooth(np.median(image[:, -depth:], axis=1).astype(np.uint8))
+    return out
+
+
+def heal_edges(canvas: np.ndarray, image: np.ndarray, matrix: np.ndarray, coverage: np.ndarray, cell: tuple[int, int, int, int], tone: np.ndarray, cfg: AugConfig) -> None:
+    """Around a pasted photo the canvas fades from the photo's own border colour to the canvas `tone` over `cfg.edge_heal_px` px, so the photo's edge
+    is not a step. It acts only on the ring outside the photo (`coverage`, the warped photo) and inside its `cell`: no pixel of the photo changes. The
+    border colour is limited to `cfg.edge_heal_limit` gray levels around the tone, so a dark scanner rim or a very different photo is only softened,
+    never turned into a glow or a shadow. `canvas` (uint8) is modified in place."""
+    if cfg.edge_heal_px <= 0:
+        return
+    columns, rows = np.flatnonzero(coverage.any(axis=0)), np.flatnonzero(coverage.any(axis=1))
+    if len(columns) == 0:
+        return
+    # Only a window around the photo can change (the fade reaches `edge_heal_px` px), so everything below runs on that window.
+    size, pad = canvas.shape[0], cfg.edge_heal_px + 1
+    wx0, wx1 = max(int(columns[0]) - pad, 0), min(int(columns[-1]) + pad + 1, size)
+    wy0, wy1 = max(int(rows[0]) - pad, 0), min(int(rows[-1]) + pad + 1, size)
+    covered = coverage[wy0:wy1, wx0:wx1]
+    distance = cv2.distanceTransform((~covered).astype(np.uint8), cv2.DIST_L2, 3)
+    x0, y0, x1, y1 = cell
+    in_cell = np.zeros(covered.shape, bool)
+    in_cell[max(y0 - wy0, 0) : max(y1 - wy0, 0), max(x0 - wx0, 0) : max(x1 - wx0, 0)] = True
+    ys, xs = np.nonzero((distance < cfg.edge_heal_px) & ~covered & in_cell)  # the ring: the only pixels that change
+    if len(ys) == 0:
+        return
+    shifted = matrix[:2].astype(np.float64).copy()
+    shifted[:, 2] -= (wx0, wy0)
+    border = cv2.warpAffine(_border_colour_source(image), shifted, (wx1 - wx0, wy1 - wy0), flags=cv2.INTER_LINEAR, borderMode=cv2.BORDER_REPLICATE)
+    edge = tone + np.clip(border[ys, xs].astype(np.float32) - tone, -cfg.edge_heal_limit, cfg.edge_heal_limit)
+    alpha = (1.0 - _smoothstep(distance[ys, xs] / cfg.edge_heal_px))[:, None]
+    window = canvas[wy0:wy1, wx0:wx1]  # a view: the assignment below writes into `canvas`
+    window[ys, xs] = np.clip(np.rint(alpha * edge + (1.0 - alpha) * window[ys, xs]), 0, 255).astype(np.uint8)
+
+
 def make_multi_sample(items: Sequence[Item], rng: np.random.Generator, cfg: AugConfig = AugConfig()) -> Sample:
     """2-4 wings, each with its own flip, rotation and scale, in separate cells of the canvas (boxes cannot overlap).
     The canvas colour is the background colour of a random wing; each wing is pasted only where its warped
-    source image covers its own cell."""
+    source image covers its own cell, unchanged, and the canvas around it fades from the photo's border colour
+    to the canvas colour (`heal_edges`)."""
     k, size = len(items), cfg.imgsz
     cells = grid_cells(k, size, rng)
+    background = items[int(rng.integers(0, k))].background
+    tone = np.array(background, dtype=np.float32)
     canvas = np.empty((size, size, 3), np.uint8)
-    canvas[:] = items[int(rng.integers(0, k))].background
+    canvas[:] = background
     all_corners = []
     for item, (x0, y0, x1, y1) in zip(items, cells):
         placement = plan_placement(item.corners, item.image.shape[1], (x0, y0, x1, y1), rng, cfg)
         warped = warp_image(item.image, placement.matrix, size, item.background)
-        mask = warp_mask(item.image.shape[:2], placement.matrix, size)
+        coverage = warp_mask(item.image.shape[:2], placement.matrix, size) > 0
+        heal_edges(canvas, item.image, placement.matrix, coverage, (x0, y0, x1, y1), tone, cfg)
         paste = np.zeros((size, size), bool)
-        paste[y0:y1, x0:x1] = mask[y0:y1, x0:x1] > 0
+        paste[y0:y1, x0:x1] = coverage[y0:y1, x0:x1]
         canvas[paste] = warped[paste]
         all_corners.append(placement.corners)
     if cfg.photometric:
