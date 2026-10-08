@@ -1,6 +1,6 @@
 # OBB wing detector, stage 1: labels, dataset and online augmentation
 
-Date: 2026-10-07 · Branch: `yolo-improvements` · Status: design agreed in conversation, this document awaits review
+Date: 2026-10-07 (sections 4, 6, 8 and 9 amended on 2026-10-08 while writing the implementation plan, after reading the Ultralytics dataset code in more detail) · Branch: `yolo-improvements` · Status: approved
 
 ## 1. Background and goal
 
@@ -50,10 +50,11 @@ Ultralytics converts OBB polygons to `(cx, cy, w, h, r)` with `cv2.minAreaRect`,
 - **Split.** Taken from the file names in `data/processed/detection/images/{train,val,test}` (17,401 / 2,197 / 2,124). The builder fails if a raw image appears in none or in more than one of them. This keeps val and test comparable with the old detector and removes the dependence on the unrecorded random draw. The assignment is copied into `labels.csv`, so the old folder is not needed afterwards.
 - **Background colour.** `background_color(img)` follows `pad_image`: the most frequent colour of the pixel rows and columns at distance 5 px from the border; if that colour is pure black or pure white, the dominant colour of the inner border strip (`dominant_inner_border_color`). `pad_image` itself is left unchanged.
 - **No image copies.** Training reads raw images in place.
+- **Image lists.** `train.txt`, `val.txt` and `test.txt` next to `labels.csv` hold the absolute raw image paths of each split. `WingOBBDataset` takes its image list from the one of its split.
 
 ### Frozen val and test sets
 
-Generated once with the same augmentation code and a fixed seed, saved as a standard Ultralytics OBB dataset under `data/processed/detection-obb/{val,test}/{images,labels}`: JPEG quality 95, 640×640, labels as `0 x1 y1 x2 y2 x3 y3 x4 y4` normalized. Each split gets one single-wing sample per image of the split, and (from stage 1b) 500 multi-wing compositions built from images of the same split. A `dataset.yaml` is written with `train: train.txt` (absolute paths of the train images, only to satisfy the Ultralytics path check; the stage 2 trainer builds its own train dataset), `val`, `test`, `nc: 1` and `names: {0: wing}`. Regenerating with the same seed gives identical files.
+Generated once with the same augmentation code and a fixed seed, saved as a standard Ultralytics OBB dataset under `data/processed/detection-obb/{val,test}/{images,labels}`: JPEG quality 95, 640×640, labels as `0 x1 y1 x2 y2 x3 y3 x4 y4` normalized. Each split gets one single-wing sample per image of the split, and (from stage 1b) 500 multi-wing compositions built from images of the same split. A `dataset.yaml` is written with `train: train.txt` (the absolute paths of the train images, the same list `WingOBBDataset` reads), `val: val/images`, `test: test/images`, `nc: 1` and `names: {0: wing}`. Regenerating with the same seed gives identical files, and the stock Ultralytics dataset reads the label files back into the same corners (tested), which is what stage 2 validates with.
 
 ## 5. Online augmentation pipeline
 
@@ -89,11 +90,10 @@ Facts the design relies on:
 
 `WingOBBDataset(YOLODataset)` in `wings/detection/obb_augment.py`:
 
-- `get_labels` builds the label list from `labels.csv` for one split (no `.txt` files next to raw images, no Ultralytics cache).
-- `update_labels_info` keeps the four corners as they are.
-- `build_transforms` returns our pipeline followed by the stock `Format`, built with the same arguments the stock `build_transforms` passes (`bbox_format="xywh"`, `normalize=True`, `return_obb=True`, `batch_idx=True`), so `collate_fn` and the loss inputs are the stock ones.
-- `img_path` is the `train.txt` file from section 4 (a list of absolute raw image paths), which `BaseDataset` accepts; `cache` stays off. The label dict handed to `Format` has the same keys Ultralytics produces (`img`, `instances`, `cls`, `im_file`, `ori_shape`, `resized_shape`, `ratio_pad`); the exact set is confirmed against 8.4.41 by the real-`DataLoader` test.
-- It reads images itself (native resolution) instead of using `load_image`, which would shrink them to `imgsz` first.
+- `__init__` passes the split's image list from section 4 to Ultralytics as `img_path` (`BaseDataset` accepts a text file of paths); `cache` stays off.
+- `get_labels` returns placeholder labels aligned with that image list (the real boxes are built per sample from `labels.csv`), so no `.txt` files appear next to raw images and no Ultralytics cache is written.
+- `get_image_and_label` builds the whole label dict itself: the canvas, `cls`, `ori_shape`, `resized_shape`, `ratio_pad` and an `Instances` object holding the four unresampled corners (stock `update_labels_info`, which resamples polygons to 100 points, is not used). It reads images at native resolution instead of using `load_image`, which would shrink them to `imgsz` first.
+- `build_transforms` returns only the stock `Format`, built with the same arguments the stock `build_transforms` passes (`bbox_format="xywh"`, `normalize=True`, `return_obb=True`, `batch_idx=True`), so `collate_fn` and the loss inputs are the stock ones.
 
 Not part of stage 1 (stage 2): the `OBBTrainer` subclass whose `build_dataset` returns `WingOBBDataset` for training and a stock dataset for validation, and the training arguments that switch off Ultralytics' own geometric and colour augmentations so nothing is applied twice.
 
@@ -111,16 +111,18 @@ Not part of stage 1 (stage 2): the `OBBTrainer` subclass whose `build_dataset` r
 No GPU and no real data; synthetic images and landmark sets only. `testpaths` in `pyproject.toml` stays on the benchmarks, so a bare `pytest` is unchanged.
 
 - `tests/test_obb_labels.py`: all points inside the box; rotating the landmarks by α rotates `theta` by α modulo 180°; margins equal extent × factor; independence of point order; agreement of our `corners → xywhr` with `ops.xyxyxyxy2xywhr`; `dir_sign` flips when the landmark set is rotated by 180°.
-- `tests/test_obb_augment.py`: corners after flip, rotation and scaling equal the analytic result; the box always lies inside the canvas; canvas pixels outside the warped image equal the background colour exactly; the same seed gives the same sample and different seeds differ; (1b) boxes in a composition do not overlap and `k` matches the number of labels.
-- A dataset test builds a tiny synthetic `labels.csv` plus images in a temporary directory and checks the shapes and keys of `WingOBBDataset[i]` and of a collated batch.
+- `tests/test_obb_augment.py`: corners after flip, rotation and scaling equal the analytic result; the box always lies inside the canvas; canvas pixels outside the warped image equal the background colour exactly; the same seed gives the same sample and different seeds differ; a box that exactly fills the canvas is still placed; (1b) boxes in a composition do not overlap, stay inside the canvas and `k` matches the number of labels, checked over 5,000 compositions on a small canvas.
+- `tests/test_obb_dataset.py`: the label table builder on a tiny synthetic raw dataset (columns, split, landmarks inside boxes, size and background columns; an unreadable image, an image missing from or doubled in the split, degenerate or non-numeric landmarks all fail loudly with the file name), and the frozen sets (complete, valid, byte-for-byte reproducible, read back by the stock Ultralytics dataset within 0.5 px, correct `dataset.yaml`).
+- `tests/test_obb_dataset_class.py`: shapes and keys of `WingOBBDataset[i]` and of a collated batch; the boxes handed to the loss equal our corners (single wings and compositions); determinism of `label_for`; a table whose image size differs from the file is rejected; a one-image split can still make compositions.
+- Shared test helpers live in `tests/obb_synthetic.py` and `tests/conftest.py`. The helper module has a unique name because a package called `tests` already exists in `site-packages`.
 
 ## 9. Files
 
-- `wings/detection/obb_labels.py` (geometry, `background_color`)
-- `wings/detection/obb_dataset.py` (builds `labels.csv`, writes the frozen sets; `typer` CLI like the other scripts in `wings/detection`)
+- `wings/detection/obb_labels.py` (geometry, `background_color`, label-table column names)
+- `wings/detection/obb_dataset.py` (builds `labels.csv` and the image lists, writes the frozen sets; `typer` CLI like the other scripts in `wings/detection`)
 - `wings/detection/obb_augment.py` (pipeline, composition, `WingOBBDataset`)
 - `notebooks/31_obb_dataset_and_augmentations.ipynb`
-- `tests/test_obb_labels.py`, `tests/test_obb_augment.py`
+- `tests/test_obb_labels.py`, `tests/test_obb_dataset.py`, `tests/test_obb_augment.py`, `tests/test_obb_dataset_class.py`, `tests/obb_synthetic.py`, `tests/conftest.py`
 
 No new dependencies (OpenCV, NumPy, pandas, SciPy, Ultralytics and PyTorch are already installed).
 
@@ -131,7 +133,7 @@ No new dependencies (OpenCV, NumPy, pandas, SciPy, Ultralytics and PyTorch are a
 3. The notebook runs from top to bottom on the local data. The real-batch check reports a maximum corner error below 0.5 px.
 4. Over 5,000 samples, the Kolmogorov–Smirnov test does not reject uniformity (p > 0.01) of both the applied rotation angle and the box angle modulo 180°.
 5. Regenerating the frozen val and test sets with the same seed reproduces identical files.
-6. Stage 1b: compositions never overlap or leave the canvas (checked over 5,000 samples).
+6. Stage 1b: compositions never overlap or leave the canvas (a unit test checks 5,000 compositions on a small canvas; the notebook checks 300 full-size ones).
 
 ## 11. Out of scope (separate follow-up projects)
 
