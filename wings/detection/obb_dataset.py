@@ -1,6 +1,7 @@
-"""Build the OBB label table (`labels.csv`) from the raw wing images.
+"""Build the OBB label table (`labels.csv`) from the raw wing images and write the frozen val/test sets.
 
     uv run python -m wings.detection.obb_dataset build      # labels.csv, train.txt, val.txt, test.txt
+    uv run python -m wings.detection.obb_dataset freeze     # frozen val and test sets + dataset.yaml
 """
 
 from __future__ import annotations
@@ -11,10 +12,12 @@ import cv2
 import numpy as np
 import pandas as pd
 import typer
+import yaml
 from loguru import logger
 from tqdm import tqdm
 
 from wings.config import COORDS_SUFX, COUNTRIES, IMG_FOLDER_SUFX, PROCESSED_DATA_DIR, RAW_DATA_DIR
+from wings.detection.obb_augment import AugConfig, Sample, choose_k, load_item, make_multi_sample, make_single_sample
 from wings.detection.obb_labels import background_color, direction_sign, obb_from_landmarks, points_inside_box, principal_axis, reference_landmarks
 
 SPLITS = ("train", "val", "test")
@@ -22,6 +25,7 @@ IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png"}
 DEFAULT_OUT_DIR = PROCESSED_DATA_DIR / "detection-obb"
 DEFAULT_SPLIT_DIR = PROCESSED_DATA_DIR / "detection"  # the folders of the old axis-aligned detector, source of the split
 DEFAULT_MEAN_SHAPE = PROCESSED_DATA_DIR / "mask_datasets" / "rectangle" / "mean_shape.pth"
+FROZEN_JPEG_QUALITY = 95
 
 app = typer.Typer(help="OBB wing detector: label table and frozen val/test sets.")
 
@@ -92,6 +96,41 @@ def write_image_lists(table: pd.DataFrame, raw_dir: Path, out_dir: Path) -> None
         (out_dir / f"{split}.txt").write_text("\n".join(paths) + "\n", encoding="utf-8")
 
 
+def write_sample(images_dir: Path, labels_dir: Path, stem: str, sample: Sample) -> None:
+    """JPEG + Ultralytics OBB label file (`0 x1 y1 x2 y2 x3 y3 x4 y4`, normalized) of one frozen sample."""
+    size = sample.image.shape[0]
+    cv2.imwrite(str(images_dir / f"{stem}.jpg"), sample.image, [cv2.IMWRITE_JPEG_QUALITY, FROZEN_JPEG_QUALITY])
+    lines = ["0 " + " ".join(f"{v:.6f}" for v in (polygon / size).clip(0.0, 1.0).reshape(-1)) for polygon in sample.corners]
+    (labels_dir / f"{stem}.txt").write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
+def freeze_split(table: pd.DataFrame, split: str, raw_dir: Path, out_dir: Path, seed: int, n_multi: int, cfg: AugConfig = AugConfig()) -> int:
+    """Write the frozen version of `split`: one single-wing sample per image and `n_multi` multi-wing compositions.
+    Every sample is drawn from its own generator seeded with (seed, split, index, kind), so reruns are identical."""
+    images_dir, labels_dir = out_dir / split / "images", out_dir / split / "labels"
+    images_dir.mkdir(parents=True, exist_ok=True)
+    labels_dir.mkdir(parents=True, exist_ok=True)
+    rows = table[table["split"] == split]
+    split_id = SPLITS.index(split)
+    for index, row in tqdm(rows.iterrows(), total=len(rows), desc=f"{split} single", unit="img"):
+        rng = np.random.default_rng([seed, split_id, int(index), 0])
+        sample = make_single_sample(load_item(raw_dir / row["file"], row), rng, cfg)
+        write_sample(images_dir, labels_dir, Path(row["file"]).stem, sample)
+    for j in tqdm(range(n_multi), desc=f"{split} multi", unit="img"):
+        rng = np.random.default_rng([seed, split_id, j, 1])
+        picks = rng.integers(0, len(rows), choose_k(rng, cfg))
+        items = [load_item(raw_dir / rows.iloc[int(p)]["file"], rows.iloc[int(p)]) for p in picks]
+        write_sample(images_dir, labels_dir, f"multi_{j:05d}", make_multi_sample(items, rng, cfg))
+    return len(rows) + n_multi
+
+
+def write_dataset_yaml(out_dir: Path) -> Path:
+    path = out_dir / "dataset.yaml"
+    content = {"path": out_dir.as_posix(), "train": "train.txt", "val": "val/images", "test": "test/images", "nc": 1, "names": {0: "wing"}}
+    path.write_text(yaml.dump(content, default_flow_style=False, allow_unicode=True), encoding="utf-8")
+    return path
+
+
 @app.command()
 def build(
     out: Path = typer.Option(DEFAULT_OUT_DIR, "--out", "-o", help="Output folder."),
@@ -109,6 +148,20 @@ def build(
     logger.info(f"{len(table)} rows -> {out / 'labels.csv'}; splits: {table['split'].value_counts().to_dict()}")
     weak = int((table["eig_ratio"] < 1.5).sum())
     logger.info(f"rows with an ill-defined axis (eig_ratio < 1.5): {weak}")
+
+
+@app.command()
+def freeze(
+    out: Path = typer.Option(DEFAULT_OUT_DIR, "--out", "-o", help="Folder with labels.csv; the frozen sets are written next to it."),
+    seed: int = typer.Option(7, "--seed", help="Seed of the frozen samples."),
+    n_multi: int = typer.Option(500, "--n-multi", help="Multi-wing compositions per split."),
+) -> None:
+    """Write the frozen val and test sets (JPEG + OBB labels) and dataset.yaml."""
+    table = pd.read_csv(out / "labels.csv")
+    for split in ("val", "test"):
+        count = freeze_split(table, split, RAW_DATA_DIR, out, seed, n_multi)
+        logger.info(f"{split}: {count} samples")
+    logger.info(f"dataset yaml: {write_dataset_yaml(out)}")
 
 
 if __name__ == "__main__":

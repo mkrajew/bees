@@ -1,9 +1,15 @@
+import hashlib
+from pathlib import Path
+
 import cv2
 import numpy as np
 import pandas as pd
 import pytest
+import yaml
+from ultralytics.data.dataset import YOLODataset
+from ultralytics.utils import DEFAULT_CFG, ops
 
-from wings.detection.obb_dataset import build_labels, read_split_map, write_image_lists
+from wings.detection.obb_dataset import build_labels, freeze_split, read_split_map, write_dataset_yaml, write_image_lists
 from wings.detection.obb_labels import CORNER_COLUMNS, points_inside_box
 
 
@@ -80,3 +86,53 @@ def test_non_numeric_landmarks_fail_with_the_file_name(synthetic_raw):
     table.to_csv(path, index=False)
     with pytest.raises(ValueError, match="BB-0000"):
         build(synthetic_raw)
+
+
+def digest(folder):
+    return {p.name: hashlib.sha256(p.read_bytes()).hexdigest() for p in sorted(folder.rglob("*")) if p.is_file()}
+
+
+def test_frozen_split_is_complete_valid_and_reproducible(label_files, tmp_path):
+    table = label_files.table
+    first, second, other = tmp_path / "a", tmp_path / "b", tmp_path / "c"
+    assert freeze_split(table, "val", label_files.raw, first, seed=7, n_multi=3) == 2 + 3
+    freeze_split(table, "val", label_files.raw, second, seed=7, n_multi=3)
+    freeze_split(table, "val", label_files.raw, other, seed=8, n_multi=3)
+    assert digest(first) == digest(second)
+    assert digest(first) != digest(other)
+
+    images = sorted((first / "val" / "images").glob("*.jpg"))
+    labels = sorted((first / "val" / "labels").glob("*.txt"))
+    assert [p.stem for p in images] == [p.stem for p in labels] and len(images) == 5
+    for image_path, label_path in zip(images, labels):
+        assert cv2.imread(str(image_path)).shape == (640, 640, 3)
+        for line in label_path.read_text().strip().splitlines():
+            values = line.split()
+            assert values[0] == "0" and len(values) == 9
+            assert all(0.0 <= float(v) <= 1.0 for v in values[1:])
+    assert sum(len(p.read_text().strip().splitlines()) for p in labels if p.stem.startswith("multi_")) >= 3 * 2
+
+
+def test_the_stock_ultralytics_dataset_reads_the_frozen_labels_back(label_files, tmp_path):
+    """Stage 2 validates on these folders with the stock dataset, so it must reproduce our corners."""
+    freeze_split(label_files.table, "val", label_files.raw, tmp_path, seed=7, n_multi=3)
+    dataset = YOLODataset(
+        img_path=str(tmp_path / "val" / "images"), imgsz=640, augment=False, hyp=DEFAULT_CFG, rect=False, cache=None,
+        data={"names": {0: "wing"}, "channels": 3}, task="obb", batch_size=4, stride=32, pad=0.5, prefix="val: ",
+    )
+    assert len(dataset) == 5
+    for index, image_file in enumerate(dataset.im_files):
+        rboxes = dataset[index]["bboxes"].clone()
+        rboxes[:, [0, 2]] *= 640
+        rboxes[:, [1, 3]] *= 640
+        theirs = ops.xywhr2xyxyxyxy(rboxes).numpy().reshape(-1, 2)
+        label_file = tmp_path / "val" / "labels" / (Path(image_file).stem + ".txt")
+        for line in label_file.read_text().strip().splitlines():
+            polygon = np.array(line.split()[1:], dtype=float).reshape(4, 2) * 640
+            assert np.linalg.norm(polygon[:, None, :] - theirs[None], axis=-1).min(axis=1).max() < 0.5
+
+
+def test_dataset_yaml(tmp_path):
+    content = yaml.safe_load(write_dataset_yaml(tmp_path).read_text())
+    assert content["train"] == "train.txt" and content["val"] == "val/images" and content["test"] == "test/images"
+    assert content["nc"] == 1 and content["names"] == {0: "wing"}
