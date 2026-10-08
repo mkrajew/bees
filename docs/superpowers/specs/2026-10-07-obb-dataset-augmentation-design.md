@@ -1,6 +1,6 @@
 # OBB wing detector, stage 1: labels, dataset and online augmentation
 
-Date: 2026-10-07 (sections 4, 6, 8 and 9 amended on 2026-10-08 while writing the implementation plan, after reading the Ultralytics dataset code in more detail) · Branch: `yolo-improvements` · Status: approved
+Date: 2026-10-07 (sections 4, 6, 8 and 9 amended on 2026-10-08 while writing the implementation plan, after reading the Ultralytics dataset code in more detail; sections 4 and 5.1 amended again on 2026-10-08 after the review of the implementation) · Branch: `yolo-improvements` · Status: approved
 
 ## 1. Background and goal
 
@@ -50,11 +50,11 @@ Ultralytics converts OBB polygons to `(cx, cy, w, h, r)` with `cv2.minAreaRect`,
 - **Split.** Taken from the file names in `data/processed/detection/images/{train,val,test}` (17,401 / 2,197 / 2,124). The builder fails if a raw image appears in none or in more than one of them. This keeps val and test comparable with the old detector and removes the dependence on the unrecorded random draw. The assignment is copied into `labels.csv`, so the old folder is not needed afterwards.
 - **Background colour.** `background_color(img)` follows `pad_image`: the most frequent colour of the pixel rows and columns at distance 5 px from the border; if that colour is pure black or pure white, the dominant colour of the inner border strip (`dominant_inner_border_color`). `pad_image` itself is left unchanged.
 - **No image copies.** Training reads raw images in place.
-- **Image lists.** `train.txt`, `val.txt` and `test.txt` next to `labels.csv` hold the absolute raw image paths of each split. `WingOBBDataset` takes its image list from the one of its split.
+- **Image lists.** `train.txt`, `val.txt` and `test.txt` next to `labels.csv` hold the absolute raw image paths of each split. `WingOBBDataset` takes its image list from the one of its split. They are specific to the machine that wrote them; on another machine `uv run python -m wings.detection.obb_dataset lists` rewrites them, and `dataset.yaml`, from `labels.csv` and the local raw folder (no image is read, the old split folders are not needed, a missing image stops it with its name).
 
 ### Frozen val and test sets
 
-Generated once with the same augmentation code and a fixed seed, saved as a standard Ultralytics OBB dataset under `data/processed/detection-obb/{val,test}/{images,labels}`: JPEG quality 95, 640×640, labels as `0 x1 y1 x2 y2 x3 y3 x4 y4` normalized. Each split gets one single-wing sample per image of the split, and (from stage 1b) 500 multi-wing compositions built from images of the same split. A `dataset.yaml` is written with `train: train.txt` (the absolute paths of the train images, the same list `WingOBBDataset` reads), `val: val/images`, `test: test/images`, `nc: 1` and `names: {0: wing}`. Regenerating with the same seed gives identical files, and the stock Ultralytics dataset reads the label files back into the same corners (tested), which is what stage 2 validates with.
+Generated once with the same augmentation code and a fixed seed, saved as a standard Ultralytics OBB dataset under `data/processed/detection-obb/{val,test}/{images,labels}`: JPEG quality 95, 640×640, labels as `0 x1 y1 x2 y2 x3 y3 x4 y4` normalized. Each split gets one single-wing sample per image of the split, and (from stage 1b) 500 multi-wing compositions built from images of the same split. A `dataset.yaml` is written with `train: train.txt` (the absolute paths of the train images, the same list `WingOBBDataset` reads), `val: val/images`, `test: test/images`, `nc: 1` and `names: {0: wing}`; it has no `path:` key, so Ultralytics resolves the folders next to the file and it works on any machine. Regenerating with the same seed gives identical files, and the stock Ultralytics dataset reads the label files back into the same corners (tested), which is what stage 2 validates with.
 
 ## 5. Online augmentation pipeline
 
@@ -62,7 +62,7 @@ Implemented as pure functions in `wings/detection/obb_augment.py` and used by `W
 
 ### 5.1 Single-wing sample (stage 1a)
 
-1. Read the raw image at native resolution (BGR).
+1. Read the raw image at native resolution (BGR). Like `pad_image`, paint its pure-white spots (the wedges the scan rotation left in the corners of most raw scans: about 93% of the images with a non-white background) with the background colour, unless that colour is itself near white. Left in, the wedges rotate with the wing and give away its axis, a cue that real photos do not have.
 2. Horizontal flip with probability 0.5 (image and corners).
 3. Rotation angle `phi ~ U(−180°, 180°)` about the OBB centre.
 4. Scale `s = f · imgsz / length` with `f ~ U(0.25, 0.90)`. `f` is clamped so that the axis-aligned extent of the rotated box, `s · (length·|cos phi| + width·|sin phi|)`, is at most `imgsz − 8`.
