@@ -12,11 +12,18 @@ feeds the stock `Format` transform, so batches are identical to a normal OBB tra
 from __future__ import annotations
 
 import math
+import os
 from dataclasses import dataclass
 from pathlib import Path
 
 import cv2
 import numpy as np
+import pandas as pd
+import torch
+from ultralytics.data.augment import Compose, Format
+from ultralytics.data.dataset import YOLODataset
+from ultralytics.utils import DEFAULT_CFG
+from ultralytics.utils.instance import Instances
 
 from wings.detection.obb_labels import CORNER_COLUMNS
 
@@ -192,3 +199,114 @@ def make_single_sample(item: Item, rng: np.random.Generator, cfg: AugConfig = Au
     if cfg.photometric:
         canvas = apply_photometric(canvas, rng, cfg)
     return Sample(canvas, placement.corners[None].astype(np.float32))
+
+
+class WingOBBDataset(YOLODataset):
+    """Training dataset: raw wing images + OBB corners from `labels.csv`, augmented online.
+
+    `image_list` is a text file with the absolute paths of the images of `split` (written by
+    `wings.detection.obb_dataset`). Stock Ultralytics label files are not used."""
+
+    def __init__(
+        self,
+        labels_csv: str | Path,
+        split: str,
+        image_list: str | Path,
+        raw_dir: str | Path | None = None,
+        cfg: AugConfig = AugConfig(),
+        hyp=DEFAULT_CFG,
+        batch_size: int = 16,
+    ) -> None:
+        if raw_dir is None:
+            from wings.config import RAW_DATA_DIR
+
+            raw_dir = RAW_DATA_DIR
+        self.raw_dir = Path(raw_dir)
+        self.cfg = cfg
+        table = pd.read_csv(labels_csv)
+        self.table = table[table["split"] == split].reset_index(drop=True)
+        self._row_of = {os.path.normcase(os.path.normpath(str(self.raw_dir / f))): i for i, f in enumerate(self.table["file"])}
+        super().__init__(
+            img_path=str(image_list),
+            imgsz=cfg.imgsz,
+            augment=True,
+            hyp=hyp,
+            batch_size=batch_size,
+            rect=False,
+            cache=None,
+            task="obb",
+            data={"names": {0: "wing"}, "channels": 3},
+            prefix=f"{split}: ",
+        )
+
+    def get_labels(self) -> list[dict]:
+        """Placeholder labels (the real ones are built per sample); keeps `im_files` and `labels` aligned."""
+        labels, self._rows = [], []
+        for im_file in self.im_files:
+            key = os.path.normcase(os.path.normpath(im_file))
+            if key not in self._row_of:
+                raise ValueError(f"{im_file} is listed in the image list but missing from the labels table")
+            row = self.table.iloc[self._row_of[key]]
+            self._rows.append(self._row_of[key])
+            corners = row[CORNER_COLUMNS].to_numpy(np.float64).reshape(4, 2) / [row["img_w"], row["img_h"]]
+            labels.append(
+                {
+                    "im_file": im_file,
+                    "shape": (int(row["img_h"]), int(row["img_w"])),
+                    "cls": np.zeros((1, 1), np.float32),
+                    "bboxes": np.zeros((1, 4), np.float32),
+                    "segments": [corners.astype(np.float32)],
+                    "keypoints": None,
+                    "normalized": True,
+                    "bbox_format": "xywh",
+                }
+            )
+        return labels
+
+    def build_transforms(self, hyp=None) -> Compose:
+        """Geometry and photometry happen in `get_image_and_label`; only the stock `Format` is left."""
+        hyp = hyp if hyp is not None else DEFAULT_CFG
+        return Compose(
+            [
+                Format(
+                    bbox_format="xywh",
+                    normalize=True,
+                    return_mask=False,
+                    return_keypoint=False,
+                    return_obb=True,
+                    mask_ratio=hyp.mask_ratio,
+                    mask_overlap=hyp.overlap_mask,
+                    batch_idx=True,
+                    bgr=hyp.bgr if self.augment else 0.0,
+                )
+            ]
+        )
+
+    def load_item(self, index: int) -> Item:
+        return load_item(self.im_files[index], self.table.iloc[self._rows[index]])
+
+    def make_label(self, index: int, rng: np.random.Generator) -> dict:
+        """The label dict Ultralytics hands to `Format` (before formatting), for sample `index` drawn with `rng`."""
+        sample = make_single_sample(self.load_item(index), rng, self.cfg)
+        polygons = sample.corners
+        n = len(polygons)
+        boxes = np.concatenate([polygons.min(axis=1), polygons.max(axis=1)], axis=1)
+        h0, w0 = self.labels[index]["shape"]
+        return {
+            "im_file": self.im_files[index],
+            "img": sample.image,
+            "cls": np.zeros((n, 1), np.float32),
+            "instances": Instances(boxes.astype(np.float32), polygons.astype(np.float32), None, bbox_format="xyxy", normalized=False),
+            "ori_shape": (h0, w0),
+            "resized_shape": sample.image.shape[:2],
+            "ratio_pad": (1.0, 1.0),
+        }
+
+    def label_for(self, index: int, seed: int) -> dict:
+        """Deterministic sample (for the notebook and tests)."""
+        return self.make_label(index, np.random.default_rng(seed))
+
+    def get_image_and_label(self, index: int) -> dict:
+        # The torch RNG is reseeded by PyTorch in every DataLoader worker, so workers never repeat each other.
+        seed = int(torch.randint(0, 2**31 - 1, (1,)).item())
+        return self.make_label(index, np.random.default_rng(seed))
