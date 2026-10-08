@@ -1,6 +1,6 @@
 import numpy as np
 import pytest
-from obb_synthetic import make_landmarks, make_wing_image
+from obb_synthetic import build_synthetic_raw, make_landmarks, make_wing_image
 
 
 @pytest.fixture
@@ -16,3 +16,9 @@ def landmarks(rng):
 @pytest.fixture
 def wing_image():
     return make_wing_image()
+
+
+@pytest.fixture
+def synthetic_raw(tmp_path):
+    return build_synthetic_raw(tmp_path)
+
