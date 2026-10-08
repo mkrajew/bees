@@ -11,6 +11,7 @@ from wings.detection.obb_augment import AugConfig, WingOBBDataset
 
 
 def make_dataset(files, **cfg_kwargs):
+    cfg_kwargs.setdefault("p_multi", 0.0)
     return WingOBBDataset(files.out / "labels.csv", "train", files.out / "train.txt", raw_dir=files.raw, cfg=AugConfig(**cfg_kwargs))
 
 
@@ -98,3 +99,25 @@ def test_close_mosaic_keeps_working(label_files):
     dataset = make_dataset(label_files)
     dataset.close_mosaic(copy.copy(DEFAULT_CFG))
     assert dataset[0]["img"].shape == (3, 640, 640)
+
+
+def test_boxes_given_to_the_loss_match_our_corners_for_compositions(label_files):
+    assert 2 <= assert_loss_boxes_match(make_dataset(label_files, p_multi=1.0)) <= 4
+
+
+def test_the_default_mix_contains_single_wings_and_compositions(label_files):
+    dataset = make_dataset(label_files, p_multi=0.4)
+    counts = [len(dataset.label_for(i % len(dataset), seed=i)["instances"].segments) for i in range(200)]
+    assert min(counts) == 1 and max(counts) >= 2
+    assert 0.2 < np.mean(np.array(counts) > 1) < 0.6
+
+
+def test_a_one_image_split_can_still_make_compositions(label_files, tmp_path):
+    table = pd.read_csv(label_files.out / "labels.csv")
+    only = table[table["split"] == "train"].iloc[:1]
+    small = tmp_path / "small"
+    small.mkdir()
+    only.to_csv(small / "labels.csv", index=False)
+    (small / "train.txt").write_text(str((label_files.raw / only.iloc[0]["file"]).resolve()) + "\n")
+    dataset = WingOBBDataset(small / "labels.csv", "train", small / "train.txt", raw_dir=label_files.raw, cfg=AugConfig(p_multi=1.0))
+    assert len(dataset) == 1 and len(dataset.label_for(0, 3)["instances"].segments) >= 2

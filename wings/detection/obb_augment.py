@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import math
 import os
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -47,6 +48,8 @@ class AugConfig:
     blur_sigma_range: tuple[float, float] = (0.3, 1.2)
     jpeg_p: float = 0.2
     jpeg_quality_range: tuple[int, int] = (60, 95)
+    p_multi: float = 0.4  # probability of a multi-wing composition
+    multi_k_weights: tuple[float, float, float] = (0.5, 0.25, 0.25)  # k = 2, 3, 4
 
 
 @dataclass(frozen=True)
@@ -201,6 +204,53 @@ def make_single_sample(item: Item, rng: np.random.Generator, cfg: AugConfig = Au
     return Sample(canvas, placement.corners[None].astype(np.float32))
 
 
+def choose_k(rng: np.random.Generator, cfg: AugConfig = AugConfig()) -> int:
+    """Number of wings of a composition: 2, 3 or 4 with the weights in `cfg.multi_k_weights`."""
+    weights = np.asarray(cfg.multi_k_weights, dtype=np.float64)
+    return int(rng.choice([2, 3, 4], p=weights / weights.sum()))
+
+
+def grid_cells(k: int, size: int, rng: np.random.Generator) -> list[tuple[int, int, int, int]]:
+    """Non-overlapping cells (x0, y0, x1, y1): two halves for k=2, three of four quadrants for k=3, all four for k=4."""
+    half = size // 2
+    quadrants = [(0, 0, half, half), (half, 0, size, half), (0, half, half, size), (half, half, size, size)]
+    if k == 2:
+        if rng.random() < 0.5:
+            cells = [(0, 0, half, size), (half, 0, size, size)]
+        else:
+            cells = [(0, 0, size, half), (0, half, size, size)]
+    elif k == 3:
+        drop = int(rng.integers(0, 4))
+        cells = [q for i, q in enumerate(quadrants) if i != drop]
+    elif k == 4:
+        cells = quadrants
+    else:
+        raise ValueError(f"k must be 2, 3 or 4, got {k}")
+    return [cells[i] for i in rng.permutation(len(cells))]
+
+
+def make_multi_sample(items: Sequence[Item], rng: np.random.Generator, cfg: AugConfig = AugConfig()) -> Sample:
+    """2-4 wings, each with its own flip, rotation and scale, in separate cells of the canvas (boxes cannot overlap).
+    The canvas colour is the background colour of a random wing; each wing is pasted only where its warped
+    source image covers its own cell."""
+    k, size = len(items), cfg.imgsz
+    cells = grid_cells(k, size, rng)
+    canvas = np.empty((size, size, 3), np.uint8)
+    canvas[:] = items[int(rng.integers(0, k))].background
+    all_corners = []
+    for item, (x0, y0, x1, y1) in zip(items, cells):
+        placement = plan_placement(item.corners, item.image.shape[1], (x0, y0, x1, y1), rng, cfg)
+        warped = warp_image(item.image, placement.matrix, size, item.background)
+        mask = warp_mask(item.image.shape[:2], placement.matrix, size)
+        paste = np.zeros((size, size), bool)
+        paste[y0:y1, x0:x1] = mask[y0:y1, x0:x1] > 0
+        canvas[paste] = warped[paste]
+        all_corners.append(placement.corners)
+    if cfg.photometric:
+        canvas = apply_photometric(canvas, rng, cfg)
+    return Sample(canvas, np.stack(all_corners).astype(np.float32))
+
+
 class WingOBBDataset(YOLODataset):
     """Training dataset: raw wing images + OBB corners from `labels.csv`, augmented online.
 
@@ -287,7 +337,12 @@ class WingOBBDataset(YOLODataset):
 
     def make_label(self, index: int, rng: np.random.Generator) -> dict:
         """The label dict Ultralytics hands to `Format` (before formatting), for sample `index` drawn with `rng`."""
-        sample = make_single_sample(self.load_item(index), rng, self.cfg)
+        if rng.random() < self.cfg.p_multi:
+            k = choose_k(rng, self.cfg)
+            items = [self.load_item(index)] + [self.load_item(int(j)) for j in rng.integers(0, len(self), k - 1)]
+            sample = make_multi_sample(items, rng, self.cfg)
+        else:
+            sample = make_single_sample(self.load_item(index), rng, self.cfg)
         polygons = sample.corners
         n = len(polygons)
         boxes = np.concatenate([polygons.min(axis=1), polygons.max(axis=1)], axis=1)

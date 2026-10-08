@@ -9,6 +9,9 @@ from wings.detection.obb_augment import (
     Item,
     apply_affine,
     apply_photometric,
+    choose_k,
+    grid_cells,
+    make_multi_sample,
     make_single_sample,
     plan_placement,
     warp_image,
@@ -151,3 +154,63 @@ def test_apply_affine_accepts_two_by_three_and_three_by_three():
     m = np.array([[0.0, -1.0, 5.0], [1.0, 0.0, 6.0]])
     assert np.allclose(apply_affine(m, pts), apply_affine(np.vstack([m, [0, 0, 1]]), pts))
     assert np.allclose(apply_affine(m, pts)[0], [3.0, 7.0])
+
+
+def test_choose_k_follows_the_weights():
+    rng = np.random.default_rng(0)
+    ks = np.array([choose_k(rng) for _ in range(4000)])
+    assert set(ks) == {2, 3, 4}
+    assert abs((ks == 2).mean() - 0.5) < 0.05 and abs((ks == 3).mean() - 0.25) < 0.05
+
+
+@pytest.mark.parametrize("k", [2, 3, 4])
+def test_grid_cells_are_disjoint_and_inside_the_canvas(k):
+    for seed in range(10):
+        cells = grid_cells(k, 640, np.random.default_rng(seed))
+        assert len(cells) == k
+        for i, (x0, y0, x1, y1) in enumerate(cells):
+            assert 0 <= x0 < x1 <= 640 and 0 <= y0 < y1 <= 640
+            for x2, y2, x3, y3 in cells[i + 1 :]:
+                assert x1 <= x2 or x3 <= x0 or y1 <= y2 or y3 <= y0
+
+
+@pytest.mark.parametrize("k", [2, 3, 4])
+def test_multi_wing_boxes_do_not_overlap_and_stay_inside(k):
+    rng = np.random.default_rng(k)
+    for _ in range(40):
+        items = [painted_item(BOX, fill=(30, 30, 30)) for _ in range(k)]
+        sample = make_multi_sample(items, rng, PLAIN)
+        assert sample.corners.shape == (k, 4, 2)
+        assert sample.corners.min() >= 0 and sample.corners.max() <= 640
+        boxes = np.concatenate([sample.corners.min(axis=1), sample.corners.max(axis=1)], axis=1)  # x0, y0, x1, y1
+        for i in range(k):
+            for j in range(i + 1, k):
+                a, b = boxes[i], boxes[j]
+                assert a[2] <= b[0] or b[2] <= a[0] or a[3] <= b[1] or b[3] <= a[1]
+
+
+def test_every_wing_of_a_composition_keeps_its_own_pixels():
+    fills = [(30, 30, 30), (30, 30, 230), (30, 230, 30)]
+    items = [painted_item(BOX, fill=f, background=BACKGROUND) for f in fills]
+    sample = make_multi_sample(items, np.random.default_rng(11), PLAIN)
+    for fill in fills:
+        painted = painted_box_corners(sample.image, fill)
+        assert min(corner_distance(label, painted) for label in sample.corners) < 2.5
+
+
+def test_five_thousand_compositions_never_overlap_or_leave_the_canvas():
+    """The geometry of the full-size case on a 160 px canvas, so that 5,000 samples take seconds."""
+    cfg = AugConfig(imgsz=160, photometric=False)
+    rng = np.random.default_rng(7)
+    box = Obb(cx=50.0, cy=20.0, length=70.0, width=26.0, theta_deg=3.0, eig_ratio=9.0).corners()
+    item = Item(np.full((40, 100, 3), BACKGROUND, np.uint8), box, BACKGROUND)
+    for _ in range(5000):
+        k = choose_k(rng, cfg)
+        sample = make_multi_sample([item] * k, rng, cfg)
+        assert sample.corners.shape == (k, 4, 2)
+        assert sample.corners.min() >= 0 and sample.corners.max() <= cfg.imgsz
+        boxes = np.concatenate([sample.corners.min(axis=1), sample.corners.max(axis=1)], axis=1)  # x0, y0, x1, y1
+        for i in range(k):
+            for j in range(i + 1, k):
+                a, b = boxes[i], boxes[j]
+                assert a[2] <= b[0] or b[2] <= a[0] or a[3] <= b[1] or b[3] <= a[1]
