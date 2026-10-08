@@ -10,6 +10,8 @@ from typer.testing import CliRunner
 from ultralytics.data.dataset import YOLODataset
 from ultralytics.utils import DEFAULT_CFG, ops
 
+from wings.detection import obb_dataset
+from wings.detection.obb_augment import AugConfig
 from wings.detection.obb_dataset import app, build_labels, freeze_split, read_split_map, write_dataset_yaml, write_image_lists
 from wings.detection.obb_labels import CORNER_COLUMNS, obb_from_landmarks, points_inside_box
 
@@ -161,3 +163,20 @@ def test_the_lists_command_rebuilds_the_lists_and_the_yaml_from_labels_csv(label
 def test_the_lists_command_fails_with_a_file_name_when_the_raw_folder_is_wrong(label_files, tmp_path):
     result = CliRunner().invoke(app, ["lists", "--out", str(label_files.out), "--raw-dir", str(tmp_path / "elsewhere")])
     assert result.exit_code != 0 and "AA-0000" in str(result.exception)
+
+
+def test_frozen_compositions_combine_wings_of_similar_tone(label_files, tmp_path, monkeypatch):
+    table = label_files.table.copy()
+    train = (table["split"] == "train").to_numpy()
+    table.loc[train, ["bg_b", "bg_g", "bg_r"]] = np.repeat(np.array([100] * 3 + [200] * 3)[:, None], 3, axis=1)  # two tone clusters far apart
+    composed = []
+    original = obb_dataset.make_multi_sample
+
+    def spy(items, rng, cfg=AugConfig()):
+        composed.append([float(np.mean(item.background)) for item in items])
+        return original(items, rng, cfg)
+
+    monkeypatch.setattr(obb_dataset, "make_multi_sample", spy)
+    freeze_split(table, "train", label_files.raw, tmp_path, seed=7, n_multi=40)
+    assert len(composed) == 40 and all(max(tones) - min(tones) <= 6.0 for tones in composed)
+    assert {round(t) for tones in composed for t in tones} == {100, 200}  # both clusters were composed, so the check is not vacuous

@@ -17,7 +17,7 @@ from loguru import logger
 from tqdm import tqdm
 
 from wings.config import COORDS_SUFX, COUNTRIES, IMG_FOLDER_SUFX, PROCESSED_DATA_DIR, RAW_DATA_DIR
-from wings.detection.obb_augment import AugConfig, Sample, choose_k, load_item, make_multi_sample, make_single_sample
+from wings.detection.obb_augment import AugConfig, Sample, TonePool, background_tones, composition_picks, load_item, make_multi_sample, make_single_sample
 from wings.detection.obb_labels import background_color, direction_sign, obb_from_landmarks, points_inside_box, principal_axis, reference_landmarks
 
 SPLITS = ("train", "val", "test")
@@ -121,10 +121,11 @@ def freeze_split(table: pd.DataFrame, split: str, raw_dir: Path, out_dir: Path, 
         rng = np.random.default_rng([seed, split_id, int(index), 0])
         sample = make_single_sample(load_item(raw_dir / row["file"], row), rng, cfg)
         write_sample(images_dir, labels_dir, Path(row["file"]).stem, sample)
+    pool = TonePool(background_tones(rows), cfg.partner_tone_tol)  # compositions only combine wings of this split with a similar background tone
     for j in tqdm(range(n_multi), desc=f"{split} multi", unit="img"):
         rng = np.random.default_rng([seed, split_id, j, 1])
-        picks = rng.integers(0, len(rows), choose_k(rng, cfg))
-        items = [load_item(raw_dir / rows.iloc[int(p)]["file"], rows.iloc[int(p)]) for p in picks]
+        picks = composition_picks(pool, rng, cfg)
+        items = [load_item(raw_dir / rows.iloc[p]["file"], rows.iloc[p]) for p in picks]
         write_sample(images_dir, labels_dir, f"multi_{j:05d}", make_multi_sample(items, rng, cfg))
     return len(rows) + n_multi
 

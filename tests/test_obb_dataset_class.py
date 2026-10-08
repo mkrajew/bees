@@ -141,3 +141,23 @@ def test_a_linked_raw_folder_still_matches_the_image_list(label_files, tmp_path)
     link_directory(link, label_files.raw)
     dataset = WingOBBDataset(label_files.out / "labels.csv", "train", label_files.out / "train.txt", raw_dir=link, cfg=AugConfig(p_multi=0.0))
     assert len(dataset) == 6 and dataset.label_for(0, 1)["img"].shape == (640, 640, 3)
+
+
+def test_compositions_combine_wings_of_similar_tone(label_files):
+    table = pd.read_csv(label_files.out / "labels.csv")
+    train = (table["split"] == "train").to_numpy()
+    table.loc[train, ["bg_b", "bg_g", "bg_r"]] = np.repeat(np.array([100] * 3 + [200] * 3)[:, None], 3, axis=1)  # two tone clusters far apart
+    table.to_csv(label_files.out / "labels.csv", index=False)
+    dataset = make_dataset(label_files, p_multi=1.0)
+    loaded = []
+    original = dataset.load_item
+    dataset.load_item = lambda index: (loaded.append(index), original(index))[1]
+    tone_of = lambda index: float(dataset.table.iloc[dataset._rows[index]][["bg_b", "bg_g", "bg_r"]].mean())
+    seen = set()
+    for seed in range(60):
+        loaded.clear()
+        dataset.label_for(seed % len(dataset), seed)
+        tones = [tone_of(i) for i in loaded]
+        assert len(loaded) >= 2 and max(tones) - min(tones) <= 6.0
+        seen.update(round(t) for t in tones)
+    assert seen == {100, 200}  # both clusters were composed, so the check is not vacuous

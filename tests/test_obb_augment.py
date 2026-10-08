@@ -1,3 +1,5 @@
+from collections import Counter
+
 import cv2
 import numpy as np
 import pytest
@@ -7,9 +9,11 @@ from scipy import stats
 from wings.detection.obb_augment import (
     AugConfig,
     Item,
+    TonePool,
     apply_affine,
     apply_photometric,
     choose_k,
+    composition_picks,
     grid_cells,
     load_item,
     make_multi_sample,
@@ -247,3 +251,47 @@ def test_a_near_white_background_keeps_its_pixels(label_files):
     row[["bg_b", "bg_g", "bg_r"]] = 250
     item = load_item(path, row)
     assert (item.image[wedges] == 255).all()
+
+
+def test_partners_have_a_similar_tone_and_are_distinct():
+    tones = np.array([100, 101, 103, 104, 105, 200, 201, 203, 250, 251], float)  # three clusters
+    pool = TonePool(tones, tol=6.0)
+    rng = np.random.default_rng(0)
+    for first in range(len(tones)):
+        near = set(np.flatnonzero(np.abs(tones - tones[first]) <= 6.0).tolist()) - {first}
+        for count in (1, 2, 3):
+            if len(near) >= count:
+                for _ in range(20):
+                    partners = pool.partners(first, count, rng).tolist()
+                    assert len(partners) == count and len(set(partners)) == count and first not in partners and set(partners) <= near
+
+
+def test_a_tiny_pool_falls_back_to_repeats():
+    pool = TonePool(np.array([10.0, 100.0, 100.5, 200.0]), tol=6.0)
+    rng = np.random.default_rng(1)
+    assert pool.partners(0, 3, rng).tolist() == [0, 0, 0]  # nobody else is near: the wing itself, repeated
+    two = pool.partners(1, 3, rng).tolist()  # the pool holds two images, three partners need repeats
+    assert len(two) == 3 and set(two) <= {1, 2}
+
+
+def test_every_candidate_is_equally_likely():
+    pool = TonePool(np.array([100.0, 101.0, 102.0, 103.0, 104.0]), tol=6.0)  # one pool of five
+    rng = np.random.default_rng(2)
+    pairs = Counter(frozenset(pool.partners(0, 2, rng).tolist()) for _ in range(6000))
+    assert len(pairs) == 6  # all C(4, 2) pairs of the other four images occur
+    assert max(pairs.values()) - min(pairs.values()) < 0.04 * 6000
+
+
+def test_without_a_tolerance_every_image_is_a_candidate():
+    pool = TonePool(np.array([0.0, 100.0, 200.0, 250.0]), tol=None)
+    assert sorted(pool.pool(0).tolist()) == [0, 1, 2, 3]
+    assert len(set(pool.partners(0, 3, np.random.default_rng(4)).tolist())) == 3
+
+
+def test_composition_picks_start_with_the_first_wing_and_follow_the_k_weights():
+    pool = TonePool(np.linspace(100.0, 101.0, 50), tol=6.0)
+    sizes = np.array([len(composition_picks(pool, np.random.default_rng(s), AugConfig(), first=7)) for s in range(2000)])
+    assert set(sizes) == {2, 3, 4} and abs((sizes == 2).mean() - 0.5) < 0.05
+    assert all(composition_picks(pool, np.random.default_rng(s), AugConfig(), first=7)[0] == 7 for s in range(20))
+    assert len({composition_picks(pool, np.random.default_rng(s), AugConfig())[0] for s in range(200)}) > 30  # without `first` it is drawn uniformly
+    assert composition_picks(pool, np.random.default_rng(5), AugConfig()) == composition_picks(pool, np.random.default_rng(5), AugConfig())

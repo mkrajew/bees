@@ -52,6 +52,7 @@ class AugConfig:
     jpeg_quality_range: tuple[int, int] = (60, 95)
     p_multi: float = 0.4  # probability of a multi-wing composition
     multi_k_weights: tuple[float, float, float] = (0.5, 0.25, 0.25)  # k = 2, 3, 4
+    partner_tone_tol: float | None = 6.0  # a composition only combines wings whose background tones differ by at most this many gray levels (None: no limit)
 
 
 @dataclass(frozen=True)
@@ -218,6 +219,50 @@ def choose_k(rng: np.random.Generator, cfg: AugConfig = AugConfig()) -> int:
     return int(rng.choice([2, 3, 4], p=weights / weights.sum()))
 
 
+def background_tones(table: pd.DataFrame) -> np.ndarray:
+    """Background tone of every row of a label table: the mean of its three background channels (the raw scans are gray, so all equal)."""
+    return table[["bg_b", "bg_g", "bg_r"]].to_numpy(np.float64).mean(axis=1)
+
+
+class TonePool:
+    """Which wings may share a composition. Every raw photo has its own background tone and is pasted whole, so a wing whose tone differs
+    from the canvas would sit in a visible frame; partners are therefore taken from the images whose tone is within `tol` gray levels of the first wing's
+    (`tol=None`: from all images). Indices refer to the order of `tones`."""
+
+    def __init__(self, tones: np.ndarray, tol: float | None = 6.0) -> None:
+        self.tones = np.asarray(tones, dtype=np.float64)
+        self.tol = tol
+        self.order = np.argsort(self.tones, kind="stable")
+        self.sorted = self.tones[self.order]
+
+    def __len__(self) -> int:
+        return len(self.tones)
+
+    def pool(self, index: int) -> np.ndarray:
+        """Indices of all images that may be combined with `index` (itself included)."""
+        if self.tol is None:
+            return np.arange(len(self.tones))
+        lo = np.searchsorted(self.sorted, self.tones[index] - self.tol, side="left")
+        hi = np.searchsorted(self.sorted, self.tones[index] + self.tol, side="right")
+        return self.order[lo:hi]
+
+    def partners(self, index: int, count: int, rng: np.random.Generator) -> np.ndarray:
+        """`count` partners for wing `index`, all different from each other and from it. If the pool is too small for that, it is drawn with repeats."""
+        pool = self.pool(index)
+        if len(pool) > count:
+            chosen = pool[rng.choice(len(pool), size=count + 1, replace=False)]  # one spare, in case the wing itself is drawn
+            return chosen[chosen != index][:count]
+        return pool[rng.integers(0, len(pool), count)]
+
+
+def composition_picks(pool: TonePool, rng: np.random.Generator, cfg: AugConfig = AugConfig(), first: int | None = None) -> list[int]:
+    """Indices of the wings of one composition: `first` (a random image if not given) and k - 1 partners from its tone pool."""
+    k = choose_k(rng, cfg)
+    if first is None:
+        first = int(rng.integers(0, len(pool)))
+    return [first, *pool.partners(first, k - 1, rng).tolist()]
+
+
 def grid_cells(k: int, size: int, rng: np.random.Generator) -> list[tuple[int, int, int, int]]:
     """Non-overlapping cells (x0, y0, x1, y1): two halves for k=2, three of four quadrants for k=3, all four for k=4."""
     half = size // 2
@@ -309,6 +354,7 @@ class WingOBBDataset(YOLODataset):
             data={"names": {0: "wing"}, "channels": 3},
             prefix=f"{split}: ",
         )
+        self.tone_pool = TonePool(background_tones(self.table.iloc[self._rows]), cfg.partner_tone_tol)  # aligned with the dataset indices
 
     def get_labels(self) -> list[dict]:
         """Placeholder labels (the real ones are built per sample); keeps `im_files` and `labels` aligned."""
@@ -359,8 +405,7 @@ class WingOBBDataset(YOLODataset):
     def make_label(self, index: int, rng: np.random.Generator) -> dict:
         """The label dict Ultralytics hands to `Format` (before formatting), for sample `index` drawn with `rng`."""
         if rng.random() < self.cfg.p_multi:
-            k = choose_k(rng, self.cfg)
-            items = [self.load_item(index)] + [self.load_item(int(j)) for j in rng.integers(0, len(self), k - 1)]
+            items = [self.load_item(i) for i in composition_picks(self.tone_pool, rng, self.cfg, first=index)]
             sample = make_multi_sample(items, rng, self.cfg)
         else:
             sample = make_single_sample(self.load_item(index), rng, self.cfg)
