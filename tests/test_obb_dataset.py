@@ -6,10 +6,11 @@ import numpy as np
 import pandas as pd
 import pytest
 import yaml
+from typer.testing import CliRunner
 from ultralytics.data.dataset import YOLODataset
 from ultralytics.utils import DEFAULT_CFG, ops
 
-from wings.detection.obb_dataset import build_labels, freeze_split, read_split_map, write_dataset_yaml, write_image_lists
+from wings.detection.obb_dataset import app, build_labels, freeze_split, read_split_map, write_dataset_yaml, write_image_lists
 from wings.detection.obb_labels import CORNER_COLUMNS, points_inside_box
 
 
@@ -136,3 +137,20 @@ def test_dataset_yaml(tmp_path):
     content = yaml.safe_load(write_dataset_yaml(tmp_path).read_text())
     assert content["train"] == "train.txt" and content["val"] == "val/images" and content["test"] == "test/images"
     assert content["nc"] == 1 and content["names"] == {0: "wing"}
+    assert "path" not in content  # without it Ultralytics resolves the folders next to the file, on any machine
+
+
+def test_the_lists_command_rebuilds_the_lists_and_the_yaml_from_labels_csv(label_files):
+    """On another machine only labels.csv and the raw images are needed: no old split folders, no image is read."""
+    for name in ("train.txt", "val.txt", "test.txt"):
+        (label_files.out / name).unlink()
+    result = CliRunner().invoke(app, ["lists", "--out", str(label_files.out), "--raw-dir", str(label_files.raw)])
+    assert result.exit_code == 0, result.output
+    train = (label_files.out / "train.txt").read_text().split()
+    assert len(train) == 6 and all(Path(p).is_absolute() and Path(p).exists() for p in train)
+    assert (label_files.out / "dataset.yaml").exists()
+
+
+def test_the_lists_command_fails_with_a_file_name_when_the_raw_folder_is_wrong(label_files, tmp_path):
+    result = CliRunner().invoke(app, ["lists", "--out", str(label_files.out), "--raw-dir", str(tmp_path / "elsewhere")])
+    assert result.exit_code != 0 and "AA-0000" in str(result.exception)

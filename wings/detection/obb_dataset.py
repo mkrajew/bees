@@ -90,10 +90,15 @@ def build_labels(
 
 
 def write_image_lists(table: pd.DataFrame, raw_dir: Path, out_dir: Path) -> None:
-    """{split}.txt with the absolute paths of the raw images of each split (input of `WingOBBDataset`)."""
-    for split in SPLITS:
-        paths = [str((raw_dir / f).resolve()) for f in table.loc[table["split"] == split, "file"]]
-        (out_dir / f"{split}.txt").write_text("\n".join(paths) + "\n", encoding="utf-8")
+    """{split}.txt with the absolute paths of the raw images of each split (input of `WingOBBDataset`).
+    Fails with the first file name if images are missing under `raw_dir`: a wrong folder must not give silently empty sets."""
+    paths = {split: [(raw_dir / f).resolve() for f in table.loc[table["split"] == split, "file"]] for split in SPLITS}
+    for split, files in paths.items():
+        missing = [p for p in files if not p.exists()]
+        if missing:
+            raise FileNotFoundError(f"{len(missing)} of {len(files)} {split} images not found under {raw_dir}, first: {missing[0]}")
+    for split, files in paths.items():
+        (out_dir / f"{split}.txt").write_text("\n".join(str(p) for p in files) + "\n", encoding="utf-8")
 
 
 def write_sample(images_dir: Path, labels_dir: Path, stem: str, sample: Sample) -> None:
@@ -126,7 +131,8 @@ def freeze_split(table: pd.DataFrame, split: str, raw_dir: Path, out_dir: Path, 
 
 def write_dataset_yaml(out_dir: Path) -> Path:
     path = out_dir / "dataset.yaml"
-    content = {"path": out_dir.as_posix(), "train": "train.txt", "val": "val/images", "test": "test/images", "nc": 1, "names": {0: "wing"}}
+    # No `path:` key: Ultralytics then resolves the folders next to this file, so the file works on any machine.
+    content = {"train": "train.txt", "val": "val/images", "test": "test/images", "nc": 1, "names": {0: "wing"}}
     path.write_text(yaml.dump(content, default_flow_style=False, allow_unicode=True), encoding="utf-8")
     return path
 
@@ -148,6 +154,18 @@ def build(
     logger.info(f"{len(table)} rows -> {out / 'labels.csv'}; splits: {table['split'].value_counts().to_dict()}")
     weak = int((table["eig_ratio"] < 1.5).sum())
     logger.info(f"rows with an ill-defined axis (eig_ratio < 1.5): {weak}")
+
+
+@app.command()
+def lists(
+    out: Path = typer.Option(DEFAULT_OUT_DIR, "--out", "-o", help="Folder with labels.csv; the lists and dataset.yaml are written next to it."),
+    raw_dir: Path = typer.Option(RAW_DATA_DIR, "--raw-dir", help="Folder with the raw wing images on this machine."),
+) -> None:
+    """Rewrite {train,val,test}.txt and dataset.yaml for this machine from an existing labels.csv (no image is read)."""
+    table = pd.read_csv(out / "labels.csv")
+    write_image_lists(table, raw_dir, out)
+    logger.info(f"image lists for {len(table)} images: {out}")
+    logger.info(f"dataset yaml: {write_dataset_yaml(out)}")
 
 
 @app.command()
