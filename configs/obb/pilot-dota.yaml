@@ -1,0 +1,20 @@
+# OBB detector, pilot run 3 of 3: start from Ultralytics' YOLO26n-OBB (release v8.4.0 of ultralytics/assets), trained on DOTAv1 at 1024 px
+# with rotations of +-180 degrees; 780 of 792 tensors transfer (only the class outputs start random).
+# Identical to pilot-coco and pilot-wings except for `name` and `init`. See jobs/obb/README.md.
+name: pilot-dota
+init: models/obb/yolo26n-obb.pt
+model: yolo26n-obb.yaml
+epochs: 40
+patience: 40        # no early stopping in a pilot
+batch: 32
+imgsz: 640
+optimizer: MuSGD    # what 'auto' would pick here, but explicit: 'auto' ignores lr0
+lr0: 0.01
+lrf: 0.01
+momentum: 0.9
+weight_decay: 0.0005
+warmup_epochs: 3
+close_mosaic: 5     # the last 5 epochs are trained without compositions (single wings only)
+seed: 42
+wandb_group: pilot
+augment: {}         # no overrides: the AugConfig defaults (p_multi 0.4, partner_tone_tol 6, edge_heal_px 12, ...)
