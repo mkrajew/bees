@@ -161,3 +161,18 @@ def test_compositions_combine_wings_of_similar_tone(label_files):
         assert len(loaded) >= 2 and max(tones) - min(tones) <= 6.0
         seen.update(round(t) for t in tones)
     assert seen == {100, 200}  # both clusters were composed, so the check is not vacuous
+
+
+def test_close_mosaic_turns_the_compositions_off(label_files):
+    """The trainer calls close_mosaic for the last epochs: from then on only single wings, the case that matters in production."""
+    dataset = make_dataset(label_files, p_multi=1.0)
+    assert max(len(dataset.label_for(i % len(dataset), seed=i)["instances"].segments) for i in range(20)) >= 2
+    dataset.close_mosaic(copy.copy(DEFAULT_CFG))
+    assert dataset.cfg.p_multi == 0.0
+    assert {len(dataset.label_for(i % len(dataset), seed=i)["instances"].segments) for i in range(30)} == {1}
+
+
+def test_fraction_keeps_only_the_first_images(label_files):
+    dataset = WingOBBDataset(label_files.out / "labels.csv", "train", label_files.out / "train.txt", raw_dir=label_files.raw, cfg=AugConfig(p_multi=0.0), fraction=0.5)
+    assert len(dataset) == 3 and len(dataset.labels) == 3 and len(dataset.tone_pool) == 3
+    assert dataset.label_for(2, seed=1)["img"].shape == (640, 640, 3)

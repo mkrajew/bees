@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 import cv2
@@ -91,14 +92,22 @@ def build_labels(
 
 def write_image_lists(table: pd.DataFrame, raw_dir: Path, out_dir: Path) -> None:
     """{split}.txt with the absolute paths of the raw images of each split (input of `WingOBBDataset`).
-    Fails with the first file name if images are missing under `raw_dir`: a wrong folder must not give silently empty sets."""
+    Fails with the first file name if images are missing under `raw_dir`: a wrong folder must not give silently empty sets.
+    Safe to call at the start of every training job, also while another job reads the lists: a list that is already right is
+    left untouched, and a different one is replaced atomically."""
     paths = {split: [(raw_dir / f).resolve() for f in table.loc[table["split"] == split, "file"]] for split in SPLITS}
     for split, files in paths.items():
         missing = [p for p in files if not p.exists()]
         if missing:
             raise FileNotFoundError(f"{len(missing)} of {len(files)} {split} images not found under {raw_dir}, first: {missing[0]}")
     for split, files in paths.items():
-        (out_dir / f"{split}.txt").write_text("\n".join(str(p) for p in files) + "\n", encoding="utf-8")
+        text = "\n".join(str(p) for p in files) + "\n"
+        target = out_dir / f"{split}.txt"
+        if target.exists() and target.read_text(encoding="utf-8") == text:
+            continue
+        temporary = target.with_name(f"{target.name}.{os.getpid()}.tmp")
+        temporary.write_text(text, encoding="utf-8")
+        os.replace(temporary, target)
 
 
 def write_sample(images_dir: Path, labels_dir: Path, stem: str, sample: Sample) -> None:

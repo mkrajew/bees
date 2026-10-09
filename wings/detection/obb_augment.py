@@ -14,7 +14,7 @@ from __future__ import annotations
 import math
 import os
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from functools import lru_cache
 from pathlib import Path
 
@@ -390,6 +390,7 @@ class WingOBBDataset(YOLODataset):
         cfg: AugConfig = AugConfig(),
         hyp=DEFAULT_CFG,
         batch_size: int = 16,
+        fraction: float = 1.0,
     ) -> None:
         if raw_dir is None:
             from wings.config import RAW_DATA_DIR
@@ -411,6 +412,7 @@ class WingOBBDataset(YOLODataset):
             task="obb",
             data={"names": {0: "wing"}, "channels": 3},
             prefix=f"{split}: ",
+            fraction=fraction,
         )
         self.tone_pool = TonePool(background_tones(self.table.iloc[self._rows]), cfg.partner_tone_tol)  # aligned with the dataset indices
 
@@ -456,6 +458,12 @@ class WingOBBDataset(YOLODataset):
                 )
             ]
         )
+
+    def close_mosaic(self, hyp) -> None:
+        """Called by the trainer for its last `close_mosaic` epochs: the stock behaviour and, from then on, only single wings
+        (the case that matters in production). The trainer resets the dataloader right after, so the workers see the change."""
+        super().close_mosaic(hyp)
+        self.cfg = replace(self.cfg, p_multi=0.0)
 
     def load_item(self, index: int) -> Item:
         return load_item(self.im_files[index], self.table.iloc[self._rows[index]])

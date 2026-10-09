@@ -1,4 +1,5 @@
 import hashlib
+import os
 from pathlib import Path
 
 import cv2
@@ -60,6 +61,21 @@ def test_image_lists_hold_absolute_paths_of_each_split(synthetic_raw, tmp_path):
     train = (tmp_path / "train.txt").read_text().split()
     assert len(train) == 6 and all(p.endswith(".png") for p in train)
     assert all(pd.io.common.file_exists(p) for p in train)
+
+
+def test_unchanged_image_lists_are_not_rewritten(synthetic_raw, tmp_path):
+    """Jobs on the cluster refresh the lists when they start, and two of them may run at once: a list that is already right must stay untouched."""
+    table = build(synthetic_raw)
+    write_image_lists(table, synthetic_raw.raw, tmp_path)
+    old = 1_000_000_000_000_000_000  # an old modification time in ns, so that a rewrite would be visible
+    for name in ("train.txt", "val.txt", "test.txt"):
+        os.utime(tmp_path / name, ns=(old, old))
+    write_image_lists(table, synthetic_raw.raw, tmp_path)
+    assert {(tmp_path / n).stat().st_mtime_ns for n in ("train.txt", "val.txt", "test.txt")} == {old}
+    (tmp_path / "train.txt").write_text("stale\n")  # a list from another machine is replaced, and no temporary file is left behind
+    write_image_lists(table, synthetic_raw.raw, tmp_path)
+    assert len((tmp_path / "train.txt").read_text().split()) == 6
+    assert not list(tmp_path.glob("*.tmp"))
 
 
 def test_an_unreadable_image_fails_with_its_name(synthetic_raw):

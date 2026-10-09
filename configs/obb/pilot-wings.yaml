@@ -1,0 +1,19 @@
+# OBB detector, pilot run 2 of 3: start from our own wing detector (models/yolo26n/best.pt; axis-aligned boxes, the angle branch starts random).
+# Identical to pilot-coco and pilot-dota except for `name` and `init`. See jobs/obb/README.md.
+name: pilot-wings
+init: models/yolo26n/best.pt
+model: yolo26n-obb.yaml
+epochs: 40
+patience: 40        # no early stopping in a pilot
+batch: 32
+imgsz: 640
+optimizer: MuSGD    # what 'auto' would pick here, but explicit: 'auto' ignores lr0
+lr0: 0.01
+lrf: 0.01
+momentum: 0.9
+weight_decay: 0.0005
+warmup_epochs: 3
+close_mosaic: 5     # the last 5 epochs are trained without compositions (single wings only)
+seed: 42
+wandb_group: pilot
+augment: {}         # no overrides: the AugConfig defaults (p_multi 0.4, partner_tone_tol 6, edge_heal_px 12, ...)

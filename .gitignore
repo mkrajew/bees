@@ -2,6 +2,8 @@
 /data/
 models
 wings/detection/runs/
+# the AMP check of Ultralytics downloads it into the working directory
+/yolo26n.pt
 
 wandb/
 
