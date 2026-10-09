@@ -57,12 +57,21 @@ epoch, which decides the epoch budget of the later rounds. If a job hits its tim
 Cost: 3 x 40 epochs, so with E minutes per epoch the pilot takes 2 x E GPU-hours (E = 4: 8 h, E = 8: 16 h of the roughly 45-50 h budget). Submit
 `pilot-dota` first, read E from its first epochs (40 x E / 60 hours against the 12 h limit of the job), and only then submit the other two.
 
+## Pilot result
+
+`pilot-dota` won clearly (the three runs are the group `pilot` in W&B); from now on the start is `models/obb/yolo26n-obb.pt`. Its best checkpoint,
+`models/obb/best-dota.pt`, scores on the frozen val set (re-evaluated on the laptop with `eval models/obb/best-dota.pt`) P 0.997, R 0.999, mAP50 0.995 and
+mAP50-95 0.995. 0.995 is the ceiling of Ultralytics' AP computation (a perfect detector gets 0.995), so the metric is saturated. IoU of the ground-truth
+boxes with the best prediction (conf 0.25): mean 0.976, 96.5% of the 3,563 boxes at 0.95 or more, 2 boxes missed (both are found, with a confidence below
+0.25), no extra boxes. Predictions on examples: `notebooks/32_obb_best_model_predictions.ipynb`.
+
 ## Planned next rounds (one variable at a time, like `jobs/online/`)
 
-1. With the winning start: `lr0` 0.01 vs 0.003, then `p_multi` 0.2 / 0.4 / 0.6, then the brightness range of the photometric step (`augment.brightness_range`,
-   the default 0.5-1.5 saturates bright backgrounds to white), 100 epochs each (including a 100-epoch baseline with the default settings, because the pilot
-   ran only 40).
-2. Final run: the best configuration, 150-200 epochs (optionally 2-3 seeds), then `eval --split test` once.
+1. No learning-rate search: for our number of iterations (more than 10,000) `optimizer: auto` picks the same MuSGD with lr0 0.01 that the configs name explicitly.
+2. With the winning start: `p_multi` 0.2 / 0.4 / 0.6, then the brightness range of the photometric step (`augment.brightness_range`, the default 0.5-1.5
+   saturates bright backgrounds to white), 100 epochs each (including a 100-epoch baseline with the default settings, because the pilot ran only 40).
+   The val metric is saturated, so these rounds can only be judged on harder data than the frozen val set (for example real photos), or skipped.
+3. Final run: the best configuration, 150-200 epochs (optionally 2-3 seeds), then `eval --split test` once.
 
 Each new config is a copy of the previous YAML and job script with the changed key(s) and a new `name`; keep everything else identical so the comparison
 stays interpretable, and add a row here.
