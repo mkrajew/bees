@@ -196,6 +196,11 @@ This software was developed as part of an engineering thesis.
 The author retains full copyright to the source code.  
 The project is released as open-source software under the terms of the **GNU General Public License v3 (GPLv3)**.
 
+The project builds on third-party software:
+
+- **U-Net and Dice loss.** `wings/modeling/unet.py` and `wings/modeling/loss.py` are adapted from [brain-segmentation-pytorch](https://github.com/mateuszbuda/brain-segmentation-pytorch) by Mateusz Buda (MIT License, Copyright (c) 2019 mateuszbuda); the license notice is kept in those files.
+- **Ultralytics YOLO** ([AGPL-3.0](https://www.ultralytics.com/license)) is used for the wing detector as a library (imported, not bundled). Ultralytics licenses the models trained with its code under AGPL-3.0 as well, so the detector weights are covered by it. The oriented-box detector was fine-tuned from Ultralytics' YOLO26n-OBB checkpoint, which was pretrained on [DOTA](https://captain-whu.github.io/DOTA/dataset.html) (its images are for academic use only). The GPLv3 explicitly allows combining GPLv3 and AGPLv3 work (section 13). Using the detector in a closed or commercial product would require an Ultralytics Enterprise License.
+
 I would like to express my sincere gratitude to my supervisor Dr. Łukasz Neumann for the valuable guidance, constructive feedback, and continuous support provided throughout the course of this work.
 
 I would also like to thank Bartłomiej Molasa (Faculty of Biology, Jagiellonian University) and Michał R. Kolasa (Institute of Zootechnics – National Research Institute) for their substantial scientific support, expert consultations, and meaningful contributions to the design, testing, and functional evaluation of the developed system.
